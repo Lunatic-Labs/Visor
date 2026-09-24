@@ -1,9 +1,9 @@
-"""Visor rules engine prototype (KAN-26, KAN-27).
+"""Scheduling rules (KAN-26, KAN-27).
 
-Pure logic, no web or database code, so it can be tested alone and
-reused whatever stack we pick (ADR 0001).
+Pure logic with no web or database code so it can be tested alone.
 """
 from __future__ import annotations
+
 from dataclasses import dataclass
 from datetime import time
 from itertools import combinations
@@ -11,15 +11,15 @@ from itertools import combinations
 
 @dataclass(frozen=True)
 class Meeting:
-    days: str      # e.g. "MWF", "TR"
+    days: str  # e.g. "MWF", "TR"
     start: time
     end: time
 
 
 @dataclass(frozen=True)
 class Section:
-    course: str    # e.g. "CS 3233"
-    number: str    # e.g. "01"
+    course: str  # e.g. "CS 3233"
+    number: str  # e.g. "01"
     meetings: tuple[Meeting, ...]
 
     @property
