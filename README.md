@@ -18,6 +18,10 @@ Other folders:
 - `specs/open-questions.md`: decisions we still need to make
 - `docs/adr/`: architecture decision records (one file per big decision)
 
+## Running it
+
+See **docs/dev-setup.md**. Short version: the backend runs with `flask --app wsgi seed` and `flask --app wsgi run`, and the frontend with `npm install` and `npm run dev`.
+
 ## Branches and PRs
 
 - Name branches after their Jira key, e.g. `KAN-26-time-conflicts`.
