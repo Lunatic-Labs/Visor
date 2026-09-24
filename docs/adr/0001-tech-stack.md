@@ -1,6 +1,6 @@
 # ADR 0001: Tech stack
 
-Status: **PROPOSED**. Needs sign-off from Austin and Gabriel.
+Status: **ACCEPTED** (2026-09-24). Austin and Gabriel agreed; see PR #1.
 Jira: KAN-19
 Date: 2026-09-23
 
@@ -37,8 +37,10 @@ Supporting tools, whichever option we pick: SQLAlchemy plus Alembic for migratio
 
 ## Decision
 
-_To fill in once Austin and Gabriel agree._
+**React + Flask + PostgreSQL.** Gabriel (most comfortable in C++) and Austin both agreed in PR #1. We keep the rules engine as its own Python module with no web code in it.
 
 ## Consequences
 
-_To fill in once decided._
+- Backend code and the rules engine are written in Python, tested with pytest.
+- Frontend is React.
+- Local dev uses Docker Compose for PostgreSQL.

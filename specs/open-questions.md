@@ -2,6 +2,8 @@
 
 ## BLOCKING: waiting on Dr. Nordstrom (Jira KAN-14)
 
+**Update 9/24:** our registrar customer is **Ms. Sandra Hood**. Gabriel is working with Dr. Nordstrom to prepare for a meeting with her. The questions below are the agenda.
+
 Visor may be mainly a **scheduling app for the registrar's office**, not a student/advisor planning tool. We emailed to ask:
 
 - Who is the main user: registrar, students, or advisors?
