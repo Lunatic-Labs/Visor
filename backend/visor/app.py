@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 from flask import Flask, abort, jsonify, request
+from sqlalchemy.pool import NullPool
 
 from . import rules
 from .models import Course, PrereqGroup, Section, Term, db
@@ -36,9 +37,26 @@ def _section_json(s: Section) -> dict:
     }
 
 
+def _database_uri() -> str:
+    """DATABASE_URL, normalised for SQLAlchemy + psycopg 3.
+
+    Hosted Postgres (Neon, Heroku, ...) hands out ``postgresql://`` URLs, which
+    SQLAlchemy would route to psycopg2. We only ship psycopg 3.
+    """
+    url = os.environ.get("DATABASE_URL", "sqlite:///visor-dev.db")
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    if url.startswith("postgresql://"):
+        url = "postgresql+psycopg://" + url[len("postgresql://"):]
+    return url
+
+
 def create_app(config: dict | None = None) -> Flask:
     app = Flask(__name__)
-    app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL", "sqlite:///visor-dev.db")
+    app.config["SQLALCHEMY_DATABASE_URI"] = _database_uri()
+    if app.config["SQLALCHEMY_DATABASE_URI"].startswith("postgresql"):
+        # Serverless: no long-lived pool; open a connection per request and drop it.
+        app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"poolclass": NullPool}
     app.config.update(config or {})
     db.init_app(app)
 
