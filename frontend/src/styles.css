@@ -1,0 +1,10 @@
+:root { font-family: system-ui, sans-serif; color: #1f2933; background: #fff; }
+main { max-width: 960px; margin: 0 auto; padding: 16px; }
+header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+h1 { color: #1b2a41; margin: 0; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #e3e8ef; }
+tr.conflict td { background: #fff4e0; }
+td.full { color: #b42318; font-weight: 600; }
+.conflicts li { margin: 4px 0; }
+.error { color: #b42318; }

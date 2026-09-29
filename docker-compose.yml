@@ -1,0 +1,30 @@
+# Local dev: `docker compose up --build`, then `docker compose exec backend flask seed`
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: visor
+      POSTGRES_PASSWORD: visor
+      POSTGRES_DB: visor
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+
+  backend:
+    build: { context: ., dockerfile: backend/Dockerfile }
+    environment:
+      DATABASE_URL: postgresql+psycopg://visor:visor@db:5432/visor
+    ports: ["5000:5000"]
+    depends_on: [db]
+
+  frontend:
+    image: node:20
+    working_dir: /app
+    command: sh -c "npm install && npm run dev"
+    environment:
+      VITE_API_URL: http://backend:5000
+    ports: ["5173:5173"]
+    volumes: [./frontend:/app]
+    depends_on: [backend]
+
+volumes:
+  pgdata:
