@@ -5,10 +5,11 @@ Idempotent: running it twice doesn't create duplicates.
 from __future__ import annotations
 
 import csv
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
-from .models import Course, MeetingTime, PrereqGroup, PrereqItem, Section, Term, db
+from .models import (Course, Equivalency, EquivalencyReview, ExternalCourse, MeetingTime, PrereqGroup,
+                     PrereqItem, School, Section, Term, db)
 
 
 def _t(s: str):
@@ -73,6 +74,93 @@ def load(data_dir: str | Path) -> dict[str, int]:
             if key not in {(m.days, m.start_time, m.end_time) for m in sec.meetings}:
                 sec.meetings.append(MeetingTime(days=key[0], start_time=key[1], end_time=key[2]))
                 counts["meetings"] += 1
+
+    db.session.commit()
+    return counts
+
+
+def _date(s: str):
+    s = s.strip()
+    return datetime.strptime(s, "%Y-%m-%d").replace(tzinfo=timezone.utc) if s else None
+
+
+def _school(name: str) -> School:
+    s = School.query.filter_by(name=name).first()
+    if s is None:
+        raise ValueError(f"unknown school {name!r}")
+    return s
+
+
+def _external(school: School, code: str) -> ExternalCourse:
+    subject, number = code.split()
+    ext = (ExternalCourse.query.filter_by(school_id=school.id, subject=subject, number=number)
+           .order_by(ExternalCourse.catalog_year.desc()).first())
+    if ext is None:
+        raise ValueError(f"unknown external course {code!r} at {school.name}")
+    return ext
+
+
+def _lipscomb(code: str) -> Course | None:
+    return _course(code) if code.strip() else None
+
+
+def load_equivalencies(data_dir: str | Path) -> dict[str, int]:
+    """Load data/equivalencies/*.csv. Needs the Lipscomb courses loaded first. Idempotent."""
+    d = Path(data_dir)
+    counts = {"schools": 0, "external_courses": 0, "equivalencies": 0, "reviews": 0}
+
+    with open(d / "schools.csv", newline="") as f:
+        for r in csv.DictReader(f):
+            if not School.query.filter_by(name=r["name"]).first():
+                db.session.add(School(name=r["name"], state=r["state"] or None, kind=r["kind"],
+                                      catalog_url=r["catalog_url"] or None))
+                counts["schools"] += 1
+    db.session.flush()
+
+    with open(d / "external_courses.csv", newline="") as f:
+        for r in csv.DictReader(f):
+            school = _school(r["school"])
+            key = dict(school_id=school.id, subject=r["subject"], number=r["number"],
+                       catalog_year=r["catalog_year"])
+            if not ExternalCourse.query.filter_by(**key).first():
+                db.session.add(ExternalCourse(**key, title=r["title"],
+                                              credits=int(r["credits"]) if r["credits"] else None))
+                counts["external_courses"] += 1
+    db.session.flush()
+
+    def find_equiv(school: School, external: str, lipscomb: str) -> tuple[ExternalCourse, Course | None,
+                                                                         Equivalency | None]:
+        ext, course = _external(school, external), _lipscomb(lipscomb)
+        existing = Equivalency.query.filter_by(external_course_id=ext.id,
+                                               course_id=course.id if course else None).first()
+        return ext, course, existing
+
+    with open(d / "equivalencies.csv", newline="") as f:
+        for r in csv.DictReader(f):
+            ext, course, existing = find_equiv(_school(r["school"]), r["external"], r["lipscomb"])
+            if existing:
+                continue
+            db.session.add(Equivalency(
+                external_course_id=ext.id, course_id=course.id if course else None,
+                kind=r["kind"], status=r["status"], source=r["source"],
+                confidence=float(r["confidence"]) if r["confidence"] else None,
+                decided_by=r["decided_by"] or None, decided_at=_date(r["decided_at"]),
+                notes=r["notes"]))
+            counts["equivalencies"] += 1
+    db.session.flush()
+
+    reviews = d / "reviews.csv"
+    if reviews.exists():
+        with open(reviews, newline="") as f:
+            for r in csv.DictReader(f):
+                _, _, eq = find_equiv(_school(r["school"]), r["external"], r["lipscomb"])
+                if eq is None:
+                    raise ValueError(f"review for missing equivalency: {r}")
+                if any(rv.reviewer == r["reviewer"] for rv in eq.reviews):
+                    continue
+                eq.reviews.append(EquivalencyReview(reviewer=r["reviewer"],
+                                                    requested_by=r["requested_by"], notes=r["notes"]))
+                counts["reviews"] += 1
 
     db.session.commit()
     return counts
