@@ -11,6 +11,7 @@ from . import rules
 from .models import Course, PrereqGroup, Section, Term, db
 
 DEFAULT_DATA = Path(__file__).resolve().parents[2] / "data" / "sample"
+DEFAULT_EQUIV_DATA = Path(__file__).resolve().parents[2] / "data" / "equivalencies"
 
 
 def _to_rule_section(s: Section) -> rules.Section:
@@ -60,14 +61,18 @@ def create_app(config: dict | None = None) -> Flask:
     app.config.update(config or {})
     db.init_app(app)
 
+    from .equivalencies import bp as equivalencies_bp
+    app.register_blueprint(equivalencies_bp)
+
     with app.app_context():
         db.create_all()
 
     @app.cli.command("seed")
     def seed_cmd():
         """Load the sample CSVs in data/sample into the database."""
-        from .seed import load
+        from .seed import load, load_equivalencies
         print(load(os.environ.get("VISOR_DATA_DIR", DEFAULT_DATA)))
+        print(load_equivalencies(os.environ.get("VISOR_EQUIV_DATA_DIR", DEFAULT_EQUIV_DATA)))
 
     @app.get("/api/health")
     def health():

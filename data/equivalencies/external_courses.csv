@@ -1,0 +1,21 @@
+school,subject,number,title,credits,catalog_year
+Nashville State Community College,CISP,1010,Computer Science I,4,2026
+Nashville State Community College,CISP,1020,Computer Science II,4,2026
+Nashville State Community College,MATH,1910,Calculus I,4,2026
+Nashville State Community College,MATH,1920,Calculus II,4,2026
+Nashville State Community College,PHYS,2110,Calculus-Based Physics I,4,2026
+Nashville State Community College,ENGL,1010,English Composition I,3,2026
+Nashville State Community College,ART,1035,Introduction to Art,3,2026
+Nashville State Community College,HIST,2010,Survey of American History I,3,2026
+Columbia State Community College,CSCI,1010,Programming Fundamentals,3,2026
+Columbia State Community College,CSCI,1020,Object-Oriented Programming,3,2026
+Columbia State Community College,CSCI,2020,Computer Organization,3,2026
+Columbia State Community College,MATH,1910,Calculus I,4,2026
+Columbia State Community College,PSYC,1030,General Psychology,3,2026
+Columbia State Community College,ENGL,1010,English Composition I,3,2026
+Volunteer State Community College,CIS,1010,Programming Fundamentals,3,2026
+Volunteer State Community College,CIS,2350,Data Structures and Algorithms,3,2026
+Volunteer State Community College,MATH,1910,Calculus I,4,2026
+Volunteer State Community College,MATH,1920,Calculus II,4,2026
+Volunteer State Community College,PHED,1110,Fitness Walking,1,2026
+Volunteer State Community College,COMM,2025,Fundamentals of Communication,3,2026

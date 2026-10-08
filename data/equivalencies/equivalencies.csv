@@ -1,0 +1,16 @@
+school,external,lipscomb,kind,status,source,confidence,decided_by,decided_at,notes
+Nashville State Community College,CISP 1010,CS 1113,direct,confirmed,sis_import,,Registrar (sample),2026-08-15,
+Nashville State Community College,CISP 1020,CS 1213,direct,confirmed,sis_import,,Registrar (sample),2026-08-15,
+Nashville State Community College,MATH 1910,MA 1314,direct,confirmed,sis_import,,Registrar (sample),2026-08-15,
+Nashville State Community College,MATH 1920,MA 2314,direct,confirmed,sis_import,,Registrar (sample),2026-08-15,
+Nashville State Community College,PHYS 2110,PH 2414,direct,confirmed,professor,,Physics dept (sample),2026-09-02,Lab included
+Nashville State Community College,ENGL 1010,,elective,confirmed,sis_import,,Registrar (sample),2026-08-15,General elective credit
+Nashville State Community College,ART 1035,,elective,confirmed,sis_import,,Registrar (sample),2026-08-15,
+Columbia State Community College,CSCI 1010,CS 1113,direct,confirmed,registrar,,Registrar (sample),2026-09-10,
+Columbia State Community College,CSCI 1020,CS 1213,direct,proposed,rules,0.78,,,Same level and topic; waiting on CS faculty
+Columbia State Community College,CSCI 2020,CS 3113,direct,rejected,professor,,CS dept (sample),2026-09-20,Lower-division course; does not cover CS 3113 content
+Columbia State Community College,MATH 1910,MA 1314,direct,confirmed,sis_import,,Registrar (sample),2026-08-15,
+Columbia State Community College,PSYC 1030,,elective,confirmed,sis_import,,Registrar (sample),2026-08-15,
+Volunteer State Community College,MATH 1910,MA 1314,direct,confirmed,sis_import,,Registrar (sample),2026-08-15,
+Volunteer State Community College,CIS 2350,CS 2113,direct,proposed,rules,0.71,,,
+Volunteer State Community College,PHED 1110,,none,confirmed,registrar,,Registrar (sample),2026-09-01,Activity course; does not transfer
