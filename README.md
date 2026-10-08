@@ -1,6 +1,8 @@
 # Visor
 
-A scheduling app for Lipscomb's registrar's office, and possibly for advisors and students (scope is being confirmed). The core job is to catch class time conflicts and prerequisite problems before registration.
+A tool for Lipscomb's registrar's office to manage transfer course equivalencies, with degree-audit features to follow. Scope came from the 10/1 registrar meeting; see `CLAUDE.md` for the current state of the project and `specs/03-design-equivalencies.md` for the design.
+
+**Using an AI assistant on this repo? Point it at `CLAUDE.md` first.**
 
 Software Studio team project. Jira board: https://visor1.atlassian.net (project KAN, "The Visors").
 
