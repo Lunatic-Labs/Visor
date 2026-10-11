@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import click
 from flask import Flask, abort, jsonify, request
 from sqlalchemy.pool import NullPool
 
@@ -73,6 +74,17 @@ def create_app(config: dict | None = None) -> Flask:
         from .seed import load, load_equivalencies
         print(load(os.environ.get("VISOR_DATA_DIR", DEFAULT_DATA)))
         print(load_equivalencies(os.environ.get("VISOR_EQUIV_DATA_DIR", DEFAULT_EQUIV_DATA)))
+
+    @app.cli.command("import-sis")
+    @click.argument("path", type=click.Path(exists=True, dir_okay=False))
+    @click.option("--dry-run", is_flag=True, help="Parse and summarize the file without writing anything.")
+    def import_sis_cmd(path, dry_run):
+        """Load the registrar's SIS equivalency export (.xlsx or .csv). Keep it in data/private/."""
+        from .sis_import import build_plan, load_sis_equivalencies, parse_rows, read_export
+        if dry_run:
+            print(build_plan(parse_rows(read_export(path))).summary())
+        else:
+            print(load_sis_equivalencies(path))
 
     @app.get("/api/health")
     def health():

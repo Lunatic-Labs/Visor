@@ -27,7 +27,7 @@ Team chat: Discord "Visor" server (#general, #notes-resources). Jira: https://vi
 1. **Read the spec before writing code.** Match the API shapes in `specs/03-design-equivalencies.md` exactly. If you need to change the contract, say so in your PR and update the spec in the same PR.
 2. **Nothing auto-confirms an equivalency.** Rules and the app may only *propose*. `confirmed` / `rejected` always carry `decided_by` (a person).
 3. **`backend/visor/rules/` is pure Python.** No Flask, no SQLAlchemy, no DB imports. Dataclasses in, dataclasses out, unit tested. The API layer converts.
-4. **Fake data only.** Everything in `data/` is made up. Never commit real student data, real transcripts, or anything FERPA-covered. Official transcripts are Level 4 data and need IT sign-off.
+4. **Fake data only in git.** Everything committed under `data/` is made up. Real registrar files (the SIS equivalency export, test transcripts, degree plans) go in `data/private/`, which is gitignored; the repo is public. Never commit real student data, real transcripts, or anything FERPA-covered. Official transcripts are Level 4 data and need IT sign-off.
 5. **Never commit secrets.** `DATABASE_URL` lives in Vercel env vars and your local `.env` (gitignored). No connection strings in code, commits, or PR text.
 6. **Never push to `main`.** Work on your branch, open a PR, get one review. `main` deploys to production automatically.
 7. **Keep PRs to your own task.** Don't edit another person's files on their branch; leave a PR comment instead.
@@ -59,9 +59,10 @@ cd frontend && npm install && npm run dev        # http://localhost:5173, /api p
 | Path | What |
 |---|---|
 | `backend/visor/app.py` | Flask app factory, schedule/prereq endpoints |
-| `backend/visor/equivalencies.py` | Equivalency API (on the KAN-38 branch until PR #4 merges) |
+| `backend/visor/equivalencies.py` | Equivalency API |
 | `backend/visor/rules/` | Pure rules engine (conflicts, prereqs; equivalency matching coming) |
 | `backend/visor/models.py`, `seed.py` | SQLAlchemy models, CSV loaders |
+| `backend/visor/sis_import.py` | Importer for the registrar's SIS equivalency export (`flask import-sis`) |
 | `data/sample/`, `data/equivalencies/` | Fake seed data; `data/equivalencies/README.md` lists the demo lookups |
 | `frontend/src/` | React app |
 | `api/index.py`, `vercel.json` | Vercel deploy layer (Flask as one serverless function) |
@@ -74,4 +75,4 @@ Hosting: Vercel (frontend + API) and Neon Postgres. Production: https://visor-st
 - Which schools are the "top 10" transfer schools? (waiting on Ms. Hood — KAN-36)
 - Real SIS equivalency export format (waiting on Ms. Hood — KAN-36)
 - Who can confirm an equivalency: registrar only, or professors too? (KAN-29)
-- Can one external course map to two Lipscomb courses? Spec v0.1 says no.
+- One external course *does* map to two Lipscomb courses in the real SIS export (135 cases). For now: most-used is `confirmed`, the rest `proposed`. Need Ms. Hood to say what decides which applies.

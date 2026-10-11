@@ -170,6 +170,35 @@ Fake but realistic, clearly labeled as sample data. Three CSVs the seed command 
 
 Real data replaces this once Ms. Hood sends the SIS export (KAN-36).
 
+## SIS import (KAN-42)
+
+Ms. Hood's export ("Lipscomb University Transfer Courses and Equivalents.xlsx", 10/6) is one row per **approved** pairing of an external course and a Lipscomb course that has been used at least 3 times. Columns: school SIS code and name, external code / title / credits / minimum grade, Lipscomb code / title / credits, and `TimesTransferred`. It does **not** go in the repo (the repo is public); keep it in `data/private/` (gitignored) and load it with `flask --app wsgi import-sis <path>` (`--dry-run` prints a summary without writing).
+
+What the real file looks like (10/11): 2,502 rows, 212 schools, 1,828 external courses after normalizing codes (`ENGL 1010` = `ENGL1010`), 173 Lipscomb courses.
+
+How it maps (`backend/visor/sis_import.py`):
+
+| SIS export | Visor |
+|---|---|
+| school name | `school.name`; `kind` is `community_college` if the name says community college / technical, else `university`. `state` left blank |
+| external code | split into `subject` + `number` at the first non-letter (`AR-2201-0399-03` → `AR` / `2201-0399-03`; `3750100` → `''` / `3750100`) |
+| external credits | `external_course.credits`, now a float (quarter-hour schools give 2.67, 3.33) |
+| (no catalog year) | `external_course.catalog_year = 'SIS'` |
+| Lipscomb code | `course` row (`EN1113.01` → `EN` / `1113.01`), created if missing. Codes with `X` placeholders (`EN2XXT`, `PH1XXX`) and `TRACC` are **elective** credit: `kind = elective`, no `course_id`, code kept in `notes` |
+| most-used pairing for an external course | `confirmed`, `source = sis_import`, `decided_by = "Registrar's office (SIS)"` (the office approved it in the SIS) |
+| any other pairing for the same external course | `proposed`, `source = sis_import`, `confidence` = its share of transfers, for the registrar to pick |
+| min grade, `TimesTransferred` | written into `notes` |
+
+Schema changes this needed: `external_course.subject` 8 → 12 chars, `number` 8 → 16, `credits` integer → float. Postgres (Neon) needs these run once before importing:
+
+```sql
+ALTER TABLE external_course ALTER COLUMN subject TYPE varchar(12);
+ALTER TABLE external_course ALTER COLUMN number TYPE varchar(16);
+ALTER TABLE external_course ALTER COLUMN credits TYPE double precision;
+```
+
+The import is idempotent per external course: one that already has a `sis_import` row is skipped. Updating rows from a newer export is not handled yet.
+
 ## Who does what for Thursday
 
 | Branch | Owner | Jira | Presents |
@@ -183,5 +212,5 @@ Each branch gets its own Vercel preview URL on push. Merge order after Thursday:
 ## Open questions
 
 1. What subject prefixes do the top transfer schools use? (Need the school list from Ms. Hood — until then the subject map is a guess.)
-2. Does one external course ever map to *two* Lipscomb courses (or two external → one)? v0.1 says no; revisit when we see the SIS export.
+2. ~~Does one external course ever map to *two* Lipscomb courses?~~ **Yes:** 135 of 1,828 external courses in the SIS export were approved as more than one Lipscomb course (often a course and its `.01` variant, sometimes two different courses). For now the most-used one is `confirmed` and the rest are `proposed` (see SIS import). Ask Ms. Hood what decides which one applies (catalog year? major?) before changing the one-confirmed rule.
 3. Who is allowed to confirm — registrar only, or professors too? Affects roles (KAN-29).

@@ -37,6 +37,18 @@ npm run dev
 
 Open http://localhost:5173. You should see 3 time conflicts for Spring 2027 (they're planted in `data/sample`).
 
+## Loading the registrar's real equivalencies
+
+Ms. Hood's SIS export is **real Lipscomb data** and the repo is public, so it never gets committed. Get it from #notes-resources on Discord, put it in `data/private/` (gitignored), then:
+
+```
+cd backend
+flask --app wsgi import-sis --dry-run "../data/private/Lipscomb University Transfer Courses and Equivalents.xlsx"
+flask --app wsgi import-sis "../data/private/Lipscomb University Transfer Courses and Equivalents.xlsx"
+```
+
+Running it twice is safe. To see only real data locally, use a fresh database and skip `flask seed`'s fake equivalencies. Don't load it into the shared Neon database without checking with the team first (it shows up on the public site). Details: `specs/03-design-equivalencies.md`, "SIS import".
+
 ## Tests and lint
 
 ```
@@ -55,5 +67,6 @@ backend/visor/         Flask app, models, CSV seed/import
 backend/tests/         pytest
 frontend/src/          React UI
 data/sample/           FAKE sample data (see its README)
+data/private/          real registrar files, gitignored, never committed
 specs/, docs/          spec-driven docs and ADRs
 ```

@@ -1,6 +1,6 @@
 # Sample transfer-equivalency data (FAKE)
 
-Made up for development and the 10/8 demo. **Not real Lipscomb equivalencies.** School names are real Tennessee community colleges so the data reads naturally, but every course, mapping, and decision here is invented. Replace with the SIS export from the registrar when it arrives (KAN-36).
+Made up for development and the 10/8 demo. **Not real Lipscomb equivalencies.** School names are real Tennessee community colleges so the data reads naturally, but every course, mapping, and decision here is invented. The registrar's real SIS export is loaded separately with `flask import-sis` and is never committed (see `docs/dev-setup.md`).
 
 Loaded by `flask seed` after `data/sample/`, via `visor.seed.load_equivalencies`. Loading is idempotent.
 
