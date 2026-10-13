@@ -29,8 +29,10 @@ export default function App() {
       <nav className="tabs">
         {TABS.map((t) => (
           <button
+            type="button"
             key={t.id}
             className={t.id === activeId ? 'active' : ''}
+            aria-pressed={t.id === activeId}
             onClick={() => setActiveId(t.id)}
           >
             {t.label}

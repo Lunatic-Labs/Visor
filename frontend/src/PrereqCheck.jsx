@@ -17,8 +17,15 @@ export default function PrereqCheck() {
       return
     }
     try {
-      const params = new URLSearchParams({ completed: completed.trim() })
-      const r = await fetch(`/api/courses/${subject.trim()}/${number.trim()}/prereq-check?${params}`)
+      const normalizedCompleted = completed
+        .split(',')
+        .map((course) => course.trim().toUpperCase())
+        .filter(Boolean)
+        .join(',')
+      const params = new URLSearchParams({ completed: normalizedCompleted })
+      const courseSubject = encodeURIComponent(subject.trim().toUpperCase())
+      const courseNumber = encodeURIComponent(number.trim().toUpperCase())
+      const r = await fetch(`/api/courses/${courseSubject}/${courseNumber}/prereq-check?${params}`)
       if (!r.ok) throw new Error('Course not found')
       setResult(await r.json())
     } catch (err) {

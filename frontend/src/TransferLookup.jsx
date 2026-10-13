@@ -89,9 +89,15 @@ export default function TransferLookup() {
             {result.external_course.title ? ` (${result.external_course.title})` : ''}
           </p>
 
-          {result.status === 'confirmed' && result.equivalency.course && (
-            <p>Equivalent to <b>{result.equivalency.course.code}</b> — {result.equivalency.course.title}
-              {result.equivalency.decided_by ? ` (confirmed by ${result.equivalency.decided_by})` : ''}</p>
+          {result.status === 'confirmed' && (
+            <p>
+              {result.equivalency.kind === 'direct' && result.equivalency.course
+                ? <>Equivalent to <b>{result.equivalency.course.code}</b> — {result.equivalency.course.title}</>
+                : result.equivalency.kind === 'elective'
+                  ? 'Counts as general elective credit.'
+                  : 'This course does not transfer.'}
+              {result.equivalency.decided_by ? ` (confirmed by ${result.equivalency.decided_by})` : ''}
+            </p>
           )}
 
           {result.status === 'proposed' && result.candidates.length > 0 && (
