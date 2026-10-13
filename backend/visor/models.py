@@ -93,10 +93,12 @@ class ExternalCourse(db.Model):
     """A course at another school, as it appears in that school's catalog."""
     id = db.Column(db.Integer, primary_key=True)
     school_id = db.Column(db.ForeignKey("school.id"), nullable=False)
-    subject = db.Column(db.String(8), nullable=False)
-    number = db.Column(db.String(8), nullable=False)
+    # Widths fit the real SIS export (e.g. 'PSYCHOLOGY 110', 'AR 2201-0399-04'); credits can be
+    # fractional when another school uses quarter hours (2.67, 3.33).
+    subject = db.Column(db.String(12), nullable=False)
+    number = db.Column(db.String(16), nullable=False)
     title = db.Column(db.String(160), nullable=False)
-    credits = db.Column(db.Integer)
+    credits = db.Column(db.Float)
     description = db.Column(db.Text)
     catalog_year = db.Column(db.String(4), nullable=False)
     source_url = db.Column(db.String(300))
