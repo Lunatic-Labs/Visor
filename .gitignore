@@ -8,3 +8,4 @@ node_modules/
 visor-dev.db
 *.db
 frontend/dist/
+*.log
