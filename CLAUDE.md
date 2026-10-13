@@ -72,7 +72,8 @@ Hosting: Vercel (frontend + API) and Neon Postgres. Production: https://visor-st
 
 ## Open questions (don't build around these yet)
 
-- Which schools are the "top 10" transfer schools? (waiting on Ms. Hood — KAN-36)
-- Real SIS equivalency export format (waiting on Ms. Hood — KAN-36)
+- ~~Top transfer schools~~ Answered 10/13 (her "Top Incoming Transfer Schools" doc, 14 schools): Nashville State, Vol State, Columbia State, UT Knoxville, UT Chattanooga, Harding, Tennessee State, MTSU, Belmont, Austin Peay, Pellissippi, Motlow, Trevecca, Samford. All 14 are in the SIS export.
+- ~~SIS export format~~ Answered: see `specs/03-design-equivalencies.md`, "SIS import".
+- The SIS export lists "Lipscomb University" itself as a transfer source, and UT Knoxville under two spellings. Ask Ms. Hood what the Lipscomb rows are.
 - Who can confirm an equivalency: registrar only, or professors too? (KAN-29)
 - One external course *does* map to two Lipscomb courses in the real SIS export (135 cases). For now: most-used is `confirmed`, the rest `proposed`. Need Ms. Hood to say what decides which applies.

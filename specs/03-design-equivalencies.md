@@ -211,6 +211,6 @@ Each branch gets its own Vercel preview URL on push. Merge order after Thursday:
 
 ## Open questions
 
-1. What subject prefixes do the top transfer schools use? (Need the school list from Ms. Hood — until then the subject map is a guess.)
+1. What subject prefixes do the top transfer schools use? The school list arrived 10/13 (14 schools, listed in `CLAUDE.md`), and the SIS export already has their courses, so the rules' subject map can be built from the export instead of guessed.
 2. ~~Does one external course ever map to *two* Lipscomb courses?~~ **Yes:** 135 of 1,828 external courses in the SIS export were approved as more than one Lipscomb course (often a course and its `.01` variant, sometimes two different courses). For now the most-used one is `confirmed` and the rest are `proposed` (see SIS import). Ask Ms. Hood what decides which one applies (catalog year? major?) before changing the one-confirmed rule.
 3. Who is allowed to confirm — registrar only, or professors too? Affects roles (KAN-29).
