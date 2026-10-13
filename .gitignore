@@ -9,3 +9,6 @@ visor-dev.db
 *.db
 frontend/dist/
 *.log
+
+# Real registrar data (SIS exports, transcripts). Never commit: the repo is public.
+data/private/
