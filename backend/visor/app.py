@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import click
 from flask import Flask, abort, jsonify, request
 
 from . import rules
@@ -45,11 +46,28 @@ def create_app(config: dict | None = None) -> Flask:
     with app.app_context():
         db.create_all()
 
+    def _run_import(data_dir, dry_run: bool) -> None:
+        from .seed import CsvImportError, load
+        try:
+            counts = load(data_dir, dry_run=dry_run)
+        except CsvImportError as e:
+            for err in e.errors:
+                click.echo(err, err=True)
+            raise click.ClickException(f"{len(e.errors)} problem(s); nothing was imported.") from None
+        click.echo(("Dry run, nothing saved: " if dry_run else "Imported: ")
+                   + ", ".join(f"{k}={v}" for k, v in counts.items()))
+
     @app.cli.command("seed")
     def seed_cmd():
         """Load the sample CSVs in data/sample into the database."""
-        from .seed import load
-        print(load(os.environ.get("VISOR_DATA_DIR", DEFAULT_DATA)))
+        _run_import(os.environ.get("VISOR_DATA_DIR", DEFAULT_DATA), dry_run=False)
+
+    @app.cli.command("import-csv")
+    @click.argument("data_dir", type=click.Path(exists=True, file_okay=False))
+    @click.option("--dry-run", is_flag=True, help="Check the files and report counts without saving.")
+    def import_csv_cmd(data_dir, dry_run):
+        """Import terms/courses/prereqs/sections CSVs from DATA_DIR."""
+        _run_import(data_dir, dry_run)
 
     @app.get("/api/health")
     def health():
