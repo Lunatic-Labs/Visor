@@ -75,6 +75,17 @@ def create_app(config: dict | None = None) -> Flask:
         print(load(os.environ.get("VISOR_DATA_DIR", DEFAULT_DATA)))
         print(load_equivalencies(os.environ.get("VISOR_EQUIV_DATA_DIR", DEFAULT_EQUIV_DATA)))
 
+    @app.cli.command("import-csv")
+    @click.argument("data_dir", type=click.Path(exists=True, file_okay=False))
+    @click.option("--dry-run", is_flag=True, help="Check the files and report what would happen, without saving.")
+    def import_csv_cmd(data_dir, dry_run):
+        """Import terms/courses/prereqs/sections CSVs from DATA_DIR (see data/sample/README.md)."""
+        from .seed import load
+        result = load(data_dir, dry_run=dry_run)
+        print(("Dry run, nothing saved: " if dry_run else "Imported: ") + str(result))
+        if result.errors:
+            raise click.ClickException(f"{len(result.errors)} row(s) rejected; see above.")
+
     @app.cli.command("import-sis")
     @click.argument("path", type=click.Path(exists=True, dir_okay=False))
     @click.option("--dry-run", is_flag=True, help="Parse and summarize the file without writing anything.")
