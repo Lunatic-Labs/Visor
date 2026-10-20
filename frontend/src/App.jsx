@@ -2,11 +2,13 @@ import { useState } from 'react'
 import Schedule from './Schedule.jsx'
 import TransferLookup from './TransferLookup.jsx'
 import PrereqCheck from './PrereqCheck.jsx'
+import CatalogImport from './CatalogImport.jsx'
 
 const TABS = [
   { id: 'schedule', label: 'Schedule & Conflicts', Component: Schedule },
   { id: 'transfer', label: 'Transfer Course Lookup', Component: TransferLookup },
   { id: 'prereqs', label: 'Prerequisites', Component: PrereqCheck },
+  { id: 'import', label: 'Import Catalog', Component: CatalogImport },
   { id: 'degree', label: 'Degree Progress', Component: ComingSoon },
 ]
 

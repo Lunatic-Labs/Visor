@@ -195,19 +195,23 @@ STEPS = [
 ]
 
 
-def load(data_dir: str | Path, dry_run: bool = False) -> ImportResult:
-    """Import the four CSVs in data_dir.
+def load(data_dir: str | Path, dry_run: bool = False, only: list[str] | None = None) -> ImportResult:
+    """Import CSVs in data_dir: terms.csv, courses.csv, prereqs.csv, sections.csv by default.
 
     Each row is validated on its own: a bad row is skipped and reported in .errors as
     "file line N: reason", every other valid row still saves. Idempotent: an unchanged row
     is left alone, a changed one is updated, nothing is ever duplicated.
     With dry_run=True, checks everything and reports what *would* happen, but saves nothing.
+    only restricts which of the four files are processed (e.g. the registrar uploaded just
+    sections.csv for a term whose courses already exist); the others are neither read nor
+    required to be present. Defaults to all four.
     """
     d = Path(data_dir)
     counts = {"terms": 0, "courses": 0, "prereq_groups": 0, "sections": 0, "meetings": 0, "updated": 0}
     errors: list[str] = []
+    steps = STEPS if only is None else [(name, fn) for name, fn in STEPS if name in only]
 
-    for name, import_row in STEPS:
+    for name, import_row in steps:
         for line_no, row in _rows(d, name, errors):
             try:
                 import_row(row, counts)
