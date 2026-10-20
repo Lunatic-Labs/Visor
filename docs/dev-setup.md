@@ -49,6 +49,18 @@ flask --app wsgi import-sis "../data/private/Lipscomb University Transfer Course
 
 Running it twice is safe. To see only real data locally, use a fresh database and skip `flask seed`'s fake equivalencies. Don't load it into the shared Neon database without checking with the team first (it shows up on the public site). Details: `specs/03-design-equivalencies.md`, "SIS import".
 
+## Loading the registrar's catalog and section schedule
+
+Same idea, for `terms.csv` / `courses.csv` / `prereqs.csv` / `sections.csv` (format: `data/sample/README.md`):
+
+```
+cd backend
+flask --app wsgi import-csv --dry-run path/to/her/csvs
+flask --app wsgi import-csv path/to/her/csvs
+```
+
+Each row is checked on its own — a bad row (bad number, unknown course, overlapping end/start time, ...) is skipped and printed as `file line N: reason`; every valid row in the same files still loads. Running it twice is safe: an unchanged row is left alone, a changed one (e.g. updated enrollment) is updated, nothing is duplicated.
+
 ## Tests and lint
 
 ```
