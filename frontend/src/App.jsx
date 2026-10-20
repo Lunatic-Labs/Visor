@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import CatalogImport from './CatalogImport.jsx'
 
 // Scaffold screen: pick a term, see its sections, and see which ones conflict.
 export default function App() {
@@ -66,6 +67,11 @@ export default function App() {
             ))}
           </tbody>
         </table>
+      </section>
+
+      <section>
+        <h2>Import catalog CSVs</h2>
+        <CatalogImport />
       </section>
     </main>
   )

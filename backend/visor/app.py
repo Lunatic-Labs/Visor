@@ -62,8 +62,10 @@ def create_app(config: dict | None = None) -> Flask:
     app.config.update(config or {})
     db.init_app(app)
 
+    from .catalog_import import bp as catalog_import_bp
     from .equivalencies import bp as equivalencies_bp
     app.register_blueprint(equivalencies_bp)
+    app.register_blueprint(catalog_import_bp)
 
     with app.app_context():
         db.create_all()
