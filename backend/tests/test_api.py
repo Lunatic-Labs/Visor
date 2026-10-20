@@ -12,8 +12,9 @@ def test_health(client):
 
 def test_seed_is_idempotent(app):
     before = (Course.query.count(), Section.query.count())
-    counts = load(DATA)
-    assert all(v == 0 for v in counts.values())
+    result = load(DATA)
+    assert result.ok
+    assert all(v == 0 for v in result.counts.values())
     assert (Course.query.count(), Section.query.count()) == before
 
 
