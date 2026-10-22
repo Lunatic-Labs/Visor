@@ -10,6 +10,7 @@ from datetime import date, datetime, timezone
 from flask import Blueprint, jsonify, request
 from sqlalchemy import or_
 
+from .auth import require_write_token
 from .models import (EQUIV_KINDS, EQUIV_SOURCES, EQUIV_STATUSES, Course, Equivalency, EquivalencyReview,
                      ExternalCourse, School, db)
 
@@ -185,6 +186,7 @@ def _apply(q: Equivalency, body: dict):
 
 
 @bp.post("/equivalencies")
+@require_write_token
 def create_equivalency():
     body = request.get_json(silent=True) or {}
     ext = db.session.get(ExternalCourse, body.get("external_course_id") or 0)
@@ -200,6 +202,7 @@ def create_equivalency():
 
 
 @bp.put("/equivalencies/<int:equiv_id>")
+@require_write_token
 def update_equivalency(equiv_id: int):
     q = db.session.get(Equivalency, equiv_id)
     if q is None:
@@ -212,6 +215,7 @@ def update_equivalency(equiv_id: int):
 
 
 @bp.post("/equivalencies/<int:equiv_id>/flag")
+@require_write_token
 def flag(equiv_id: int):
     q = db.session.get(Equivalency, equiv_id)
     if q is None:
