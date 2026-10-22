@@ -39,7 +39,7 @@ export default function Schedule() {
 
       {error && <p className="error">{error}</p>}
 
-      <section>
+      <section className="card">
         <h2>Time conflicts ({conflicts.length})</h2>
         {conflicts.length === 0 ? <p>None found.</p> : (
           <ul className="conflicts">
@@ -48,7 +48,7 @@ export default function Schedule() {
         )}
       </section>
 
-      <section>
+      <section className="card">
         <h2>Sections</h2>
         <table>
           <thead><tr><th>Section</th><th>Title</th><th>Meets</th><th>Seats</th></tr></thead>
@@ -58,7 +58,10 @@ export default function Schedule() {
                 <td>{s.label}</td>
                 <td>{s.title}</td>
                 <td>{s.meetings.map((m) => `${m.days} ${m.start}–${m.end}`).join(', ')}</td>
-                <td className={s.full ? 'full' : ''}>{s.enrolled}/{s.capacity}{s.full ? ' (full)' : ''}</td>
+                <td>
+                  {s.enrolled}/{s.capacity}
+                  {s.full && <span className="badge badge-unknown">full</span>}
+                </td>
               </tr>
             ))}
           </tbody>

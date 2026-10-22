@@ -139,7 +139,7 @@ def lookup():
         return jsonify({"status": "confirmed", "external_course": external_json(ext),
                         "equivalency": equivalency_json(confirmed[0]), "candidates": []})
     if proposed:
-        candidates = [{"course": course_json(q.course), "score": q.confidence,
+        candidates = [{"id": q.id, "course": course_json(q.course), "score": q.confidence,
                        "why": f"proposed in the equivalency table ({q.source})"}
                       for q in proposed if q.course is not None]
         return jsonify({"status": "proposed", "external_course": external_json(ext),

@@ -23,26 +23,34 @@ export default function App() {
   const Active = TABS.find((t) => t.id === activeId).Component
 
   return (
-    <main>
-      <header>
-        <h1>Visor</h1>
+    <div className="app-shell">
+      <header className="topbar">
+        <div className="brand">
+          <span className="brand-mark">V</span>
+          <span className="brand-text">
+            <strong>Visor</strong>
+            <span className="brand-sub">Lipscomb Registrar</span>
+          </span>
+        </div>
+
+        <nav className="tabs">
+          {TABS.map((t) => (
+            <button
+              type="button"
+              key={t.id}
+              className={t.id === activeId ? 'active' : ''}
+              aria-pressed={t.id === activeId}
+              onClick={() => setActiveId(t.id)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
       </header>
 
-      <nav className="tabs">
-        {TABS.map((t) => (
-          <button
-            type="button"
-            key={t.id}
-            className={t.id === activeId ? 'active' : ''}
-            aria-pressed={t.id === activeId}
-            onClick={() => setActiveId(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </nav>
-
-      <Active />
-    </main>
+      <main>
+        <Active />
+      </main>
+    </div>
   )
 }

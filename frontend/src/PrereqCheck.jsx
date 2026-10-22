@@ -56,8 +56,13 @@ export default function PrereqCheck() {
       {error && <p className="error">{error}</p>}
 
       {result && (
-        <section>
-          <h2>{result.course}</h2>
+        <section className="card">
+          <h2>
+            {result.course}
+            <span className={`badge badge-${result.missing.length === 0 ? 'confirmed' : 'unknown'}`}>
+              {result.missing.length === 0 ? 'met' : 'missing prereqs'}
+            </span>
+          </h2>
           {result.missing.length === 0
             ? <p>All prerequisites met.</p>
             : (

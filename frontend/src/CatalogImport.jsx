@@ -68,7 +68,12 @@ export default function CatalogImport() {
 
       {result && (
         <section className={`lookup-result status-${result.ok ? 'confirmed' : 'proposed'}`}>
-          <h2>{result.ok ? 'Imported' : `Imported with ${result.errors.length} row(s) rejected`}</h2>
+          <h2>
+            Import result
+            <span className={`badge badge-${result.ok ? 'confirmed' : 'proposed'}`}>
+              {result.ok ? 'all rows saved' : `${result.errors.length} rejected`}
+            </span>
+          </h2>
           <ul>
             {Object.entries(result.counts).map(([k, v]) => <li key={k}>{k}: {v}</li>)}
           </ul>

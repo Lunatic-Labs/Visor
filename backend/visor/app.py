@@ -6,6 +6,7 @@ from pathlib import Path
 
 import click
 from flask import Flask, abort, jsonify, request
+from sqlalchemy import or_
 from sqlalchemy.pool import NullPool
 
 from . import rules
@@ -102,6 +103,19 @@ def create_app(config: dict | None = None) -> Flask:
     @app.get("/api/health")
     def health():
         return {"status": "ok"}
+
+    @app.get("/api/courses")
+    def courses():
+        """Lipscomb's own catalog, for picking a course when confirming an equivalency manually.
+        ?q= filters by subject, number, or title (case-insensitive substring)."""
+        query = Course.query
+        q = request.args.get("q", "").strip()
+        if q:
+            like = f"%{q}%"
+            query = query.filter(or_(Course.subject.ilike(like), Course.number.ilike(like),
+                                     Course.title.ilike(like)))
+        rows = query.order_by(Course.subject, Course.number).limit(200).all()
+        return jsonify([{"id": c.id, "code": c.code, "title": c.title, "credits": c.credits} for c in rows])
 
     @app.get("/api/terms")
     def terms():

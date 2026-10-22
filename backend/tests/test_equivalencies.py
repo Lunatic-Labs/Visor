@@ -78,6 +78,7 @@ def test_lookup_proposed_has_candidates_and_pending_review(client):
     assert body["equivalency"]["confidence"] == pytest.approx(0.78)
     assert body["equivalency"]["pending_reviews"] == 1
     assert [c["course"]["code"] for c in body["candidates"]] == ["CS 1213"]
+    assert body["candidates"][0]["id"] == body["equivalency"]["id"]
 
 
 def test_lookup_rejected_only_is_unknown(client):
@@ -132,6 +133,31 @@ def test_flag_creates_pending_review(client):
     assert r.status_code == 201
     assert r.json["decision"] == "pending" and r.json["requested_by"] == "registrar"
     assert _lookup(client, "Volunteer", "CIS", "2350").json["equivalency"]["pending_reviews"] == 1
+
+
+def test_confirm_a_proposed_candidate_from_the_ui_flow(client):
+    """What TransferLookup's 'Confirm this match' button does: PUT the candidate's id, decided_by
+    required, then the next lookup comes back confirmed."""
+    candidate_id = _lookup(client, "Columbia", "CSCI", "1020").json["candidates"][0]["id"]
+    r = client.put(f"/api/equivalencies/{candidate_id}", json={"status": "confirmed", "decided_by": "Ms. Hood"})
+    assert r.status_code == 200
+    body = _lookup(client, "Columbia", "CSCI", "1020").json
+    assert body["status"] == "confirmed"
+    assert body["equivalency"]["decided_by"] == "Ms. Hood"
+
+
+def test_create_manual_mapping_for_an_unknown_course(client):
+    """What the 'unknown' result's inline form does: look up (recording the external course),
+    then POST a confirmed direct mapping against a real Lipscomb course id."""
+    ext = _lookup(client, "Volunteer", "CIS", "9999", title="Special Topics").json["external_course"]
+    course_id = next(c["id"] for c in client.get("/api/courses?q=1113").json)
+    r = client.post("/api/equivalencies", json={
+        "external_course_id": ext["id"], "kind": "direct", "course_id": course_id,
+        "status": "confirmed", "decided_by": "Ms. Hood",
+    })
+    assert r.status_code == 201
+    body = _lookup(client, "Volunteer", "CIS", "9999").json
+    assert body["status"] == "confirmed" and body["equivalency"]["course"]["code"] == "CS 1113"
 
 
 def test_flag_requires_reviewer_and_known_id(client):
