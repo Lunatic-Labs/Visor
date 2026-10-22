@@ -52,14 +52,15 @@ erDiagram
 | Table | Columns | Notes |
 |---|---|---|
 | **program** | id, name (`Computer Science`), degree (`B.S.`), catalog_year (`2026-27`), total_hours (127) | Unique (name, degree, catalog_year). A student follows the catalog year they entered under. |
-| **req_group** | id, program_id (null = Lipscomb Core, shared), name (`Major core`, `Upper-division electives`, `SEEK: Through Scripture`), rule (`all` / `choose_n` / `hours`), n (for choose_n), hours (for hours), sort | One row per "bucket" on the audit. |
+| **req_group** | id, program_id (null = Lipscomb Core, shared), catalog_year (set on shared Core groups so each catalog year has its own Core; for program groups it's the program's), name (`Major core`, `Upper-division electives`, `SEEK: Through Scripture`), rule (`all` / `choose_n` / `hours`), n (for choose_n), hours (for hours), sort | One row per "bucket" on the audit. |
 | **req_item** | id, req_group_id, course_id (nullable), pattern (nullable, e.g. `{"subjects": ["CS","IT","SEC","SENG","CCT"], "min_level": 3000}`), tag (nullable, e.g. `DP`), min_grade (nullable, `C+`), label | A specific course, *or* a pattern that matches many (electives), *or* a tag. |
 | **plan_slot** | id, program_id, term_index (1–8), course_id or req_group_id, credits | The suggested 8-semester grid. |
 | **course_term** | course_id, term (`F` / `SP` / `SU`) | From the Accounting "Semester" column; fills in KAN-28. |
+| **course_tag** | course_id, tag (`DP`, `SOCIAL_INQUIRY`, `CHRISTIANITY_SOCIETY`), catalog_year | Which courses carry a tag. A `req_item.tag` matches against this. Filled from Ms. Hood's lists (question 4); empty until then, so tag requirements show "can't check yet". |
 | *(existing)* **prereq_group / prereq_item** | add **min_grade** (nullable) to prereq_item | For `w/C+`. |
 
 Rules for counting:
-- A course counts toward **one** requirement only. Take the most specific one first: a specific course, then a pattern, then a general elective.
+- A course counts toward **one** requirement only. The audit picks the assignment that **meets the most requirements overall**, not a greedy first pick. Example: a course that fits both a choose-one group and an hours group goes wherever that leaves fewer groups unmet. Specificity (specific course → pattern → general elective) only breaks ties. With a few dozen courses this is a small bipartite matching / backtracking problem, so speed isn't a concern.
 - Course `kind = elective` transfer credit (e.g. `EN2XXT`) can only count toward pattern or general-elective groups whose subject and level match.
 - `min_grade` is checked when a grade is given. Transfer credit with no grade counts as passing at the SIS minimum (usually C).
 
@@ -91,11 +92,15 @@ class AuditResult:
     unused: list[str]           # courses that counted toward nothing
     projected_term: str | None  # e.g. "2028SP"
 
-def audit(program: Program, taken: list[Taken]) -> AuditResult: ...
-def project(remaining: list[str], prereqs, offered, start_term: str, max_hours: int = 18) -> dict[str, list[str]]: ...
+def audit(program: Program, taken: list[Taken], tags: dict[str, set[str]],
+          start_term: str | None = None) -> AuditResult: ...
+def project(remaining: list[str], taken: list[Taken], prereqs, offered,
+            start_term: str, max_hours: int = 18) -> dict[str, list[str]]: ...
 ```
 
-`project()` schedules the remaining specific courses term by term, in prereq order, only in terms they're offered, with at most `max_hours` per term. Electives fill any slack. This reuses `missing_prereqs()` from `rules/conflicts.py`.
+- `tags` maps course code to its tags (from `course_tag`). The API loads it, so the rules stay pure.
+- `start_term` (e.g. `2027SP`) is passed in; the rules never read the clock. `audit()` calls `project()` only when it's given, otherwise `projected_term` is `None`.
+- `project()` schedules the remaining specific courses term by term, in prereq order, only in terms they're offered, with at most `max_hours` per term. Electives fill any slack. It seeds prerequisites from `taken`, counting a course as done only if its grade meets that prereq's `min_grade` (in-progress courses count as done from the next term). That needs a grade-aware version of `missing_prereqs()` from `rules/conflicts.py`; today's version only checks codes.
 
 ## API sketch
 
@@ -103,13 +108,13 @@ def project(remaining: list[str], prereqs, offered, start_term: str, max_hours: 
 |---|---|---|
 | GET | `/api/programs` | List programs + catalog years |
 | GET | `/api/programs/<id>` | Requirement groups + suggested plan |
-| POST | `/api/audit` | Body: `{program_id, taken: [{code, credits, grade}], transfer: [{school_id, subject, number, grade}]}`. Transfer courses go through the equivalency lookup first. Returns `AuditResult`, plus a `transfer` list showing what each transfer course became (confirmed / pending / unknown). **Nothing is stored.** |
+| POST | `/api/audit` | Body: `{program_id, start_term?, taken: [{code, credits, grade}], transfer: [{school_id, subject, number, grade}]}`. `start_term` is optional; without it there's no graduation projection. Transfer courses go through the equivalency lookup first. Returns `AuditResult`, plus a `transfer` list showing what each transfer course became (confirmed / pending / unknown). **Nothing is stored.** |
 
 ## Getting the data in
 
 `flask import-degree-plan <xlsx>` reads one program's file from `data/private/`:
 1. **Major sheet:** specific courses go into a "Major core" group (`all`). `3XX3/4XX3` rows become pattern items. Prereq text is parsed (`or` → OR group, `+` → AND). `/` is ambiguous and reported for a person to decide. Accounting's Semester column fills `course_term`.
-2. **Lipscomb Core sheet:** imported once as the shared groups (program_id null).
+2. **Lipscomb Core sheet:** imported once **per catalog year** as the shared groups (program_id null, catalog_year set). Re-importing the same year updates it; a new year adds a new set.
 3. **Degree Plan sheet:** fills `plan_slot`, and its `(... w/C+)` notes fill prereq min grades.
 4. Every conflict and unknown is printed as `file/sheet/row: problem`. Nothing ambiguous is guessed. (Same approach as the SIS and catalog importers.)
 
