@@ -49,6 +49,10 @@ flask --app wsgi import-sis "../data/private/Lipscomb University Transfer Course
 
 Running it twice is safe. To see only real data locally, use a fresh database and skip `flask seed`'s fake equivalencies. Don't load it into the shared Neon database without checking with the team first (it shows up on the public site). Details: `specs/03-design-equivalencies.md`, "SIS import".
 
+## Routes that change data need a token on the live site
+
+`main` is public, so POST/PUT routes that write (create/confirm/flag equivalencies) check header `X-Visor-Token` against the `VISOR_WRITE_TOKEN` env var. Locally with `flask run --debug` you don't need it. On Vercel, writes stay off until someone sets `VISOR_WRITE_TOKEN` in the project's env vars; then send it with `curl -H "X-Visor-Token: ..."`. Never commit the token.
+
 ## Tests and lint
 
 ```

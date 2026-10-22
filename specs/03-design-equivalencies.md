@@ -43,6 +43,8 @@ Why `status` lives on the equivalency and not the external course: one external 
 
 ## API contract
 
+**Write protection (KAN-46, stopgap until login, KAN-30).** `POST /api/equivalencies`, `PUT /api/equivalencies/<id>`, and `POST /api/equivalencies/<id>/flag` need header `X-Visor-Token` matching the `VISOR_WRITE_TOKEN` env var: `401` if it's missing or wrong. If the env var isn't set, writes return `403`, except under `flask run --debug` and in tests, which stay open. GETs and `POST /api/equivalencies/lookup` stay open. (Lookup can insert an unseen external course; that's accepted for now.) New write routes use `@require_write_token` or `bp.before_request(write_guard)` from `backend/visor/auth.py`.
+
 All JSON. Errors are `{"error": "message"}` with a 4xx status. The frontend builds against these shapes with mock data first.
 
 ### `GET /api/schools`
