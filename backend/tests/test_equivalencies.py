@@ -124,6 +124,17 @@ def test_list_filters(client):
     assert client.get("/api/equivalencies?status=bogus").status_code == 400
 
 
+def test_summary_matches_the_list(client):
+    s = client.get("/api/equivalencies/summary").json
+    rows = client.get("/api/equivalencies").json
+    for status in ("confirmed", "proposed", "rejected"):
+        assert s[status] == sum(q["status"] == status for q in rows)
+    assert s["electives"] == sum(q["status"] == "confirmed" and q["kind"] == "elective" for q in rows)
+    assert s["schools"] == len(client.get("/api/schools").json)
+    assert s["pending_reviews"] == sum(q["pending_reviews"] for q in rows)
+    assert s["top_schools"] and s["top_schools"][0]["confirmed"] >= s["top_schools"][-1]["confirmed"]
+
+
 # --- flag, create, confirm ----------------------------------------------------------------------
 
 def test_flag_creates_pending_review(client):
@@ -144,6 +155,26 @@ def test_confirm_a_proposed_candidate_from_the_ui_flow(client):
     body = _lookup(client, "Columbia", "CSCI", "1020").json
     assert body["status"] == "confirmed"
     assert body["equivalency"]["decided_by"] == "Ms. Hood"
+
+
+def test_make_primary_swaps_the_confirmed_match(client):
+    before = _lookup(client, "Nashville", "CISP", "1010").json
+    old = before["equivalency"]
+    other_course = next(c for c in client.get("/api/courses").json if c["id"] != old["course"]["id"])
+    alt = client.post("/api/equivalencies", json={
+        "external_course_id": before["external_course"]["id"], "course_id": other_course["id"],
+        "status": "proposed",
+    }).json
+
+    assert client.post(f"/api/equivalencies/{alt['id']}/make-primary", json={}).status_code == 400
+    r = client.post(f"/api/equivalencies/{alt['id']}/make-primary", json={"decided_by": "Ms. Hood"})
+    assert r.status_code == 200 and r.json["status"] == "confirmed"
+
+    after = _lookup(client, "Nashville", "CISP", "1010").json
+    assert after["equivalency"]["id"] == alt["id"] and after["equivalency"]["decided_by"] == "Ms. Hood"
+    assert [a["id"] for a in after["alternates"]] == [old["id"]]
+    demoted = next(q for q in client.get("/api/equivalencies").json if q["id"] == old["id"])
+    assert demoted["status"] == "proposed" and "Replaced as the primary match by Ms. Hood" in demoted["notes"]
 
 
 def test_create_manual_mapping_for_an_unknown_course(client):

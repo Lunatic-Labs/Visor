@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { PageHead } from './ui.jsx'
 
 // Scaffold screen: pick a term, see its sections, and see which ones conflict.
 export default function Schedule() {
@@ -30,12 +31,20 @@ export default function Schedule() {
 
   return (
     <>
-      <label>
-        Term{' '}
-        <select value={term} onChange={(e) => setTerm(e.target.value)}>
-          {terms.map((t) => <option key={t.code} value={t.code}>{t.name}</option>)}
-        </select>
-      </label>
+      <PageHead
+        title="Schedule"
+        actions={
+          <label className="inline-field">
+            Term
+            <select value={term} onChange={(e) => setTerm(e.target.value)}>
+              {terms.map((t) => <option key={t.code} value={t.code}>{t.name}</option>)}
+            </select>
+          </label>
+        }
+      >
+        Every section in a term, with time conflicts and full sections highlighted. Sample schedule data for
+        now, until we have the real section list.
+      </PageHead>
 
       {error && <p className="error">{error}</p>}
 

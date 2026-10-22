@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { PageHead } from './ui.jsx'
 
 // Bare-bones UI for the prereq-check endpoint, which is already live on the backend.
 export default function PrereqCheck() {
@@ -35,8 +36,9 @@ export default function PrereqCheck() {
 
   return (
     <>
-      <p className="hint">Check whether a student has the prerequisites for a course.</p>
+      <PageHead title="Prerequisites">Check whether a student has the prerequisites for a course.</PageHead>
 
+      <section className="card">
       <form onSubmit={check} className="lookup-form">
         <label>
           Subject{' '}
@@ -52,8 +54,8 @@ export default function PrereqCheck() {
         </label>
         <button type="submit">Check</button>
       </form>
-
       {error && <p className="error">{error}</p>}
+      </section>
 
       {result && (
         <section className="card">

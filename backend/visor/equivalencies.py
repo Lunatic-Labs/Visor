@@ -8,7 +8,8 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 
 from flask import Blueprint, jsonify, request
-from sqlalchemy import or_
+from sqlalchemy import func, or_
+from sqlalchemy.orm import selectinload
 
 from .models import (EQUIV_KINDS, EQUIV_SOURCES, EQUIV_STATUSES, Course, Equivalency, EquivalencyReview,
                      ExternalCourse, School, db)
@@ -86,7 +87,12 @@ def school_courses(school_id: int):
 
 @bp.get("/equivalencies")
 def list_equivalencies():
-    query = Equivalency.query.join(ExternalCourse)
+    # Eager-load what equivalency_json touches; lazy loads cost one round trip per row on Neon.
+    query = Equivalency.query.join(ExternalCourse).options(
+        selectinload(Equivalency.external_course).selectinload(ExternalCourse.school),
+        selectinload(Equivalency.course),
+        selectinload(Equivalency.reviews),
+    )
     status = request.args.get("status")
     if status:
         if status not in EQUIV_STATUSES:
@@ -97,6 +103,26 @@ def list_equivalencies():
         query = query.filter(ExternalCourse.school_id == school_id)
     rows = query.order_by(ExternalCourse.school_id, ExternalCourse.subject, ExternalCourse.number).all()
     return jsonify([equivalency_json(q, embed_external=True) for q in rows])
+
+
+@bp.get("/equivalencies/summary")
+def summary():
+    """Counts for the dashboard, computed in SQL so it doesn't need the full list."""
+    by_status = dict(db.session.query(Equivalency.status, func.count()).group_by(Equivalency.status).all())
+    top = (db.session.query(School.name, func.count(Equivalency.id))
+           .join(ExternalCourse, ExternalCourse.school_id == School.id)
+           .join(Equivalency, Equivalency.external_course_id == ExternalCourse.id)
+           .filter(Equivalency.status == "confirmed")
+           .group_by(School.name).order_by(func.count(Equivalency.id).desc()).limit(5).all())
+    return jsonify({
+        "confirmed": by_status.get("confirmed", 0),
+        "proposed": by_status.get("proposed", 0),
+        "rejected": by_status.get("rejected", 0),
+        "electives": Equivalency.query.filter_by(status="confirmed", kind="elective").count(),
+        "schools": School.query.filter_by(active=True).count(),
+        "pending_reviews": EquivalencyReview.query.filter_by(decision="pending").count(),
+        "top_schools": [{"name": name, "confirmed": n} for name, n in top],
+    })
 
 
 def _suggest(external: ExternalCourse) -> list[dict]:
@@ -137,7 +163,8 @@ def lookup():
 
     if confirmed:
         return jsonify({"status": "confirmed", "external_course": external_json(ext),
-                        "equivalency": equivalency_json(confirmed[0]), "candidates": []})
+                        "equivalency": equivalency_json(confirmed[0]), "candidates": [],
+                        "alternates": [equivalency_json(q) for q in proposed]})
     if proposed:
         candidates = [{"id": q.id, "course": course_json(q.course), "score": q.confidence,
                        "why": f"proposed in the equivalency table ({q.source})"}
@@ -207,6 +234,30 @@ def update_equivalency(equiv_id: int):
     if (error := _apply(q, request.get_json(silent=True) or {})) is not None:
         db.session.rollback()
         return error
+    db.session.commit()
+    return jsonify(equivalency_json(q, embed_external=True))
+
+
+@bp.post("/equivalencies/<int:equiv_id>/make-primary")
+def make_primary(equiv_id: int):
+    """Confirm this equivalency and move whatever was confirmed for the same external course back
+    to proposed, in one transaction. For external courses approved as more than one Lipscomb
+    course, where the registrar decides which one should be the default."""
+    q = db.session.get(Equivalency, equiv_id)
+    if q is None:
+        return _err("unknown equivalency", 404)
+    decided_by = ((request.get_json(silent=True) or {}).get("decided_by") or "").strip()
+    if not decided_by:
+        return _err("decided_by is required (the person making this the primary match)")
+    if q.kind == "direct" and q.course_id is None:
+        return _err("a confirmed direct equivalency needs a course_id")
+    now = datetime.now(timezone.utc)
+    for old in Equivalency.query.filter(Equivalency.external_course_id == q.external_course_id,
+                                        Equivalency.status == "confirmed", Equivalency.id != q.id):
+        old.status = "proposed"
+        note = f"Replaced as the primary match by {decided_by} on {now.date().isoformat()}"
+        old.notes = f"{old.notes}; {note}" if old.notes else note
+    q.status, q.decided_by, q.decided_at = "confirmed", decided_by, now
     db.session.commit()
     return jsonify(equivalency_json(q, embed_external=True))
 

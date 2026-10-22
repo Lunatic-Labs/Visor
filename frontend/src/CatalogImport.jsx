@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { PageHead } from './ui.jsx'
 
 const FILES = [
   { key: 'terms', label: 'Terms' },
@@ -43,12 +44,12 @@ export default function CatalogImport() {
 
   return (
     <>
-      <p className="hint">
-        Upload any of the catalog CSVs below. Rows with a bad or missing field are skipped and
-        listed with their line number and reason; everything else still imports. Re-uploading
-        the same file is safe — it won't create duplicates.
-      </p>
+      <PageHead title="Import catalog">
+        Upload Lipscomb's course catalog and section schedule as CSV files. Any row with a problem is skipped
+        and listed with its line number; everything else still imports. Uploading the same file twice is safe.
+      </PageHead>
 
+      <section className="card">
       <form onSubmit={upload} className="lookup-form">
         {FILES.map(({ key, label }) => (
           <label key={key}>
@@ -63,8 +64,8 @@ export default function CatalogImport() {
         </label>
         <button type="submit" disabled={loading}>{loading ? 'Importing…' : 'Import'}</button>
       </form>
-
       {error && <p className="error">{error}</p>}
+      </section>
 
       {result && (
         <section className={`lookup-result status-${result.ok ? 'confirmed' : 'proposed'}`}>
