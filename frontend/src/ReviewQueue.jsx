@@ -4,6 +4,49 @@ import { PageHead, StatusBadge, lipscombLabel } from './ui.jsx'
 
 const PAGE = 15
 
+// Log the answer once a professor (or the registrar) has decided what an unknown course counts as.
+function RecordForm({ courses, busy, onSave }) {
+  const [kind, setKind] = useState('direct')
+  const [courseId, setCourseId] = useState('')
+  const [notes, setNotes] = useState('')
+  const [problem, setProblem] = useState('')
+
+  function save() {
+    if (kind === 'direct' && !courseId) { setProblem('Pick the Lipscomb course it counts as.'); return }
+    setProblem('')
+    onSave({ kind, course_id: kind === 'direct' ? Number(courseId) : null, ...(notes.trim() && { notes: notes.trim() }) })
+  }
+
+  return (
+    <div className="record-form lookup-form">
+      <label>
+        Once decided, it counts as
+        <select value={kind} onChange={(e) => setKind(e.target.value)}>
+          <option value="direct">a specific Lipscomb course</option>
+          <option value="elective">general elective credit</option>
+          <option value="none">no credit (doesn't transfer)</option>
+        </select>
+      </label>
+      {kind === 'direct' && (
+        <label className="grow">
+          Lipscomb course
+          <select value={courseId} onChange={(e) => setCourseId(e.target.value)}>
+            <option value="">Pick a course…</option>
+            {courses.map((c) => <option key={c.id} value={c.id}>{c.code} — {c.title}</option>)}
+          </select>
+        </label>
+      )}
+      <label className="grow">
+        Who approved it, and how (optional)
+        <input value={notes} onChange={(e) => setNotes(e.target.value)}
+               placeholder="e.g. Dr. Nordstrom approved by email, 10/22" />
+      </label>
+      <button type="button" disabled={busy} onClick={save}>Save as approved</button>
+      {problem && <span className="error small">{problem}</span>}
+    </div>
+  )
+}
+
 // Every external course with at least one proposed row, with what it currently counts as.
 // Most come from the SIS export: courses approved as more than one Lipscomb course, where the
 // most-used one was stored as approved and the rest wait here for the registrar to settle.
@@ -16,6 +59,9 @@ export default function ReviewQueue({ actor, onChange }) {
   const [query, setQuery] = useState('')
   const [reviewer, setReviewer] = useState('')
   const [shown, setShown] = useState(PAGE)
+
+  const [courses, setCourses] = useState([])
+  useEffect(() => { api('/api/courses').then(setCourses).catch(() => {}) }, [])
 
   const load = useCallback(() => api('/api/equivalencies').then(setRows).catch((e) => setError(e.message)), [])
   useEffect(() => { load() }, [load])
@@ -72,6 +118,12 @@ export default function ReviewQueue({ actor, onChange }) {
   const dismiss = (q) => !needName() && run(
     () => api(`/api/equivalencies/${q.id}`, { method: 'PUT', body: { status: 'rejected', decided_by: actor.trim() } }),
     `Dismissed ${lipscombLabel(q)}.`)
+
+  const record = (q, body) => !needName() && run(
+    () => api(`/api/equivalencies/${q.id}`, {
+      method: 'PUT', body: { ...body, status: 'confirmed', decided_by: actor.trim() },
+    }),
+    `Saved. ${q.external_course.subject} ${q.external_course.number} is approved now, so nobody has to ask again.`)
 
   function flag(q) {
     if (!reviewer.trim()) { setError('Enter a professor or department to flag it to (above the list).'); return }
@@ -134,7 +186,7 @@ export default function ReviewQueue({ actor, onChange }) {
                   {q.pending_reviews > 0 && <span className="badge badge-elective">flagged for a professor</span>}
                 </div>
                 {q.notes && <div className="muted small">{q.notes}</div>}
-                {open && <div className="muted small">Record what it counts as from Look Up once you know.</div>}
+                {open && <RecordForm courses={courses} busy={busy} onSave={(body) => record(q, body)} />}
               </div>
               <div className="row-actions">
                 {!open && (

@@ -177,6 +177,34 @@ def test_make_primary_swaps_the_confirmed_match(client):
     assert demoted["status"] == "proposed" and "Replaced as the primary match by Ms. Hood" in demoted["notes"]
 
 
+def test_unknown_course_flagged_then_answer_logged_so_nobody_asks_again(client):
+    """Unknown -> flag for a professor -> professor says yes -> registrar logs it -> the next
+    lookup, by anyone, comes back approved with the note about who decided."""
+    ext = _lookup(client, "Volunteer", "CSCI", "7777", title="Intro to Algorithms").json["external_course"]
+    placeholder = client.post("/api/equivalencies", json={
+        "external_course_id": ext["id"], "kind": "direct", "course_id": None, "status": "proposed",
+        "notes": "No match on file; flagged from Look Up",
+    }).json
+    assert client.post(f"/api/equivalencies/{placeholder['id']}/flag",
+                       json={"reviewer": "Dr. Nordstrom"}).status_code == 201
+    still_open = _lookup(client, "Volunteer", "CSCI", "7777").json
+    assert still_open["status"] == "proposed" and still_open["candidates"] == []
+    assert still_open["equivalency"]["pending_reviews"] == 1
+
+    course_id = next(c["id"] for c in client.get("/api/courses?q=2113").json)
+    r = client.put(f"/api/equivalencies/{placeholder['id']}", json={
+        "kind": "direct", "course_id": course_id, "status": "confirmed", "decided_by": "Ms. Hood",
+        "notes": "Dr. Nordstrom approved by email, 10/22",
+    })
+    assert r.status_code == 200
+
+    later = _lookup(client, "Volunteer", "CSCI", "7777").json
+    assert later["status"] == "confirmed"
+    assert later["equivalency"]["course"]["code"] == "CS 2113"
+    assert later["equivalency"]["decided_by"] == "Ms. Hood"
+    assert "Dr. Nordstrom approved by email" in later["equivalency"]["notes"]
+
+
 def test_create_manual_mapping_for_an_unknown_course(client):
     """What the 'unknown' result's inline form does: look up (recording the external course),
     then POST a confirmed direct mapping against a real Lipscomb course id."""

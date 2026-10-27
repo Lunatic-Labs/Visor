@@ -23,6 +23,7 @@ export default function TransferLookup({ actor, onChange }) {
   const [reviewer, setReviewer] = useState('')
   const [manualKind, setManualKind] = useState('direct')
   const [manualCourseId, setManualCourseId] = useState('')
+  const [manualNotes, setManualNotes] = useState('')
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState('')
   const [message, setMessage] = useState('')
@@ -107,6 +108,7 @@ export default function TransferLookup({ actor, onChange }) {
       course_id: manualKind === 'direct' ? Number(manualCourseId) : null,
       status: 'confirmed',
       decided_by: actor.trim(),
+      ...(manualNotes.trim() && { notes: manualNotes.trim() }),
     }
     act(() => (placeholder
       ? api(`/api/equivalencies/${placeholder.id}`, { method: 'PUT', body })
@@ -250,6 +252,11 @@ export default function TransferLookup({ actor, onChange }) {
                     </select>
                   </label>
                 )}
+                <label className="grow">
+                  Who approved it, and how (optional)
+                  <input value={manualNotes} onChange={(e) => setManualNotes(e.target.value)}
+                         placeholder="e.g. Dr. Nordstrom approved by email, 10/22" />
+                </label>
                 <button type="button" disabled={busy} onClick={record}>Save as approved</button>
               </div>
               <p className="muted small">Not sure? Flag it for a professor instead. Visor won't guess for you.</p>
