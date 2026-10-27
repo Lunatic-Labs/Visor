@@ -10,6 +10,7 @@ This came from the 10/1 meeting with Ms. Sandra Hood (Registrar). Her #2 ask, De
 
 - Design spec for the current work: `specs/03-design-equivalencies.md` (tables, API contract, rules interface)
 - Older data model: `specs/02-design-data-model.md`
+- Degree audit (next, draft): `specs/04-design-degree-audit.md` (KAN-48, epic KAN-12)
 - Professor: Dr. Nordstrom. Registrar: Ms. Sandra Hood. IT / FERPA: Brett Hanson.
 
 ## Team and who owns what
