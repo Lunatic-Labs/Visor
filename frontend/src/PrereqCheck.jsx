@@ -57,7 +57,15 @@ export default function PrereqCheck() {
       {error && <p className="error">{error}</p>}
       </section>
 
-      {result && (
+      {result && !result.prereq_data_loaded && (
+        <section className="card">
+          <h2>{result.course} <span className="badge badge-muted">no data yet</span></h2>
+          <p>Prerequisites haven't been loaded into Visor yet, so it can't tell you whether this course's
+            prerequisites are met.</p>
+        </section>
+      )}
+
+      {result && result.prereq_data_loaded && (
         <section className="card">
           <h2>
             {result.course}

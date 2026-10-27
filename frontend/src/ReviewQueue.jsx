@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api.js'
-import { PageHead, StatusBadge, lipscombLabel } from './ui.jsx'
+import { CourseList, CoursePicker, PageHead, StatusBadge, lipscombLabel } from './ui.jsx'
 
 const PAGE = 15
 
@@ -30,10 +30,7 @@ function RecordForm({ courses, busy, onSave }) {
       {kind === 'direct' && (
         <label className="grow">
           Lipscomb course
-          <select value={courseId} onChange={(e) => setCourseId(e.target.value)}>
-            <option value="">Pick a course…</option>
-            {courses.map((c) => <option key={c.id} value={c.id}>{c.code} — {c.title}</option>)}
-          </select>
+          <CoursePicker courses={courses} onChange={setCourseId} />
         </label>
       )}
       <label className="grow">
@@ -150,6 +147,7 @@ export default function ReviewQueue({ actor, onChange }) {
                placeholder="Professor to flag to (optional)" />
       </div>
 
+      <CourseList courses={courses} />
       {error && <p className="error banner">{error}</p>}
       {message && !error && <p className="success banner">{message}</p>}
 

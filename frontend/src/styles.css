@@ -218,7 +218,9 @@ tr.clickable { cursor: pointer; }
 tr.selected td { background: var(--purple-50); }
 tr.detail-row td { background: var(--purple-50); padding-top: 0; }
 .detail { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 16px; padding: 8px 4px 4px; }
-tr.conflict td { background: var(--amber-bg); }
+tr.conflict td, .conflict-row { background: var(--amber-bg); }
+.conflict-row { padding-left: 10px; padding-right: 10px; border-radius: 8px; }
+td.nowrap { white-space: nowrap; }
 td.full { color: var(--red); font-weight: 600; }
 .conflicts li { margin: 4px 0; }
 

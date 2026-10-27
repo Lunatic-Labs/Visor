@@ -1,3 +1,25 @@
+import { useState } from 'react'
+
+const courseLabel = (c) => `${c.code} — ${c.title}`
+
+// Render once per screen; every CoursePicker on it reads from this list.
+export function CourseList({ courses }) {
+  return <datalist id="visor-courses">{courses.map((c) => <option key={c.id} value={courseLabel(c)} />)}</datalist>
+}
+
+// Type-to-search course box (there are over a thousand courses, too many for a dropdown).
+// Calls onChange with the course id as a string, or '' until the text matches a course.
+export function CoursePicker({ courses, onChange, placeholder = 'Start typing, e.g. CS 1213' }) {
+  const [text, setText] = useState('')
+  function change(value) {
+    setText(value)
+    const typed = value.trim().toLowerCase()
+    const match = courses.find((c) => courseLabel(c) === value || c.code.toLowerCase() === typed)
+    onChange(match ? String(match.id) : '')
+  }
+  return <input list="visor-courses" value={text} onChange={(e) => change(e.target.value)} placeholder={placeholder} />
+}
+
 // Registrar-facing wording for statuses. The API keeps confirmed/proposed/unknown.
 const STATUS = {
   approved: ['Approved', 'confirmed'],

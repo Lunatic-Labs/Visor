@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from './api.js'
-import { PageHead, StatusBadge, lipscombLabel } from './ui.jsx'
+import { CourseList, CoursePicker, PageHead, StatusBadge, lipscombLabel } from './ui.jsx'
 
 // "ENG 100", "ENG100", "eng-100" -> ["ENG", "100"]; same split the SIS importer uses.
 function splitCode(code) {
@@ -142,6 +142,7 @@ export default function TransferLookup({ actor, onChange }) {
             School
             <input list="visor-schools" value={schoolName} onChange={(e) => setSchoolName(e.target.value)}
                    placeholder={`Start typing… (${schools.length} schools)`} />
+            <CourseList courses={courses} />
             <datalist id="visor-schools">
               {schools.map((s) => <option key={s.id} value={s.name} />)}
             </datalist>
@@ -246,10 +247,7 @@ export default function TransferLookup({ actor, onChange }) {
                 {manualKind === 'direct' && (
                   <label className="grow">
                     Lipscomb course
-                    <select value={manualCourseId} onChange={(e) => setManualCourseId(e.target.value)}>
-                      <option value="">Pick a course…</option>
-                      {courses.map((c) => <option key={c.id} value={c.id}>{c.code} — {c.title}</option>)}
-                    </select>
+                    <CoursePicker courses={courses} onChange={setManualCourseId} />
                   </label>
                 )}
                 <label className="grow">

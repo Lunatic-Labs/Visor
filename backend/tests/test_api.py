@@ -45,7 +45,15 @@ def test_unknown_term_404(client):
 
 def test_prereq_check(client):
     r = client.get("/api/courses/CS/3433/prereq-check?completed=CS 1213")
-    assert r.json == {"course": "CS 3433", "missing": [["MA 2314"]]}
+    assert r.json == {"course": "CS 3433", "missing": [["MA 2314"]], "prereq_data_loaded": True}
+
+
+def test_prereq_check_says_so_when_no_prerequisite_data_is_loaded(app, client):
+    from visor.models import PrereqGroup, db
+    PrereqGroup.query.delete()
+    db.session.commit()
+    r = client.get("/api/courses/CS/3433/prereq-check")
+    assert r.json["missing"] == [] and r.json["prereq_data_loaded"] is False
 
 
 def test_exactly_the_planted_conflicts(client):

@@ -125,7 +125,7 @@ Dashboard counts, computed in SQL: `{"confirmed", "proposed", "rejected", "elect
 
 ### `GET /api/courses?q=prog`
 
-Lipscomb's own catalog (`id`, `code`, `title`, `credits`), filtered by subject, number, or title. Used to pick the Lipscomb course when recording an equivalency by hand. Capped at 200 rows.
+Lipscomb's own catalog (`id`, `code`, `title`, `credits`), filtered by subject, number, or title. Used to pick the Lipscomb course when recording an equivalency by hand. Capped at 5,000 rows (the full catalog is about 1,200 courses once the class schedule is imported).
 
 ## Rules (pure Python, `backend/visor/rules/equivalency.py`)
 

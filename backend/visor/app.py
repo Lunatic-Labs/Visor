@@ -7,6 +7,7 @@ from pathlib import Path
 import click
 from flask import Flask, abort, jsonify, request
 from sqlalchemy import or_
+from sqlalchemy.orm import selectinload
 from sqlalchemy.pool import NullPool
 
 from . import rules
@@ -89,6 +90,14 @@ def create_app(config: dict | None = None) -> Flask:
         if result.errors:
             raise click.ClickException(f"{len(result.errors)} row(s) rejected; see above.")
 
+    @app.cli.command("import-schedule")
+    @click.argument("path", type=click.Path(exists=True, dir_okay=False))
+    @click.option("--dry-run", is_flag=True, help="Check the file and report what would happen, without saving.")
+    def import_schedule_cmd(path, dry_run):
+        """Load a class schedule exported from the university's public schedule page (.csv)."""
+        from .schedule_import import load_schedule
+        print(("Dry run, nothing saved: " if dry_run else "Imported: ") + str(load_schedule(path, dry_run=dry_run)))
+
     @app.cli.command("import-sis")
     @click.argument("path", type=click.Path(exists=True, dir_okay=False))
     @click.option("--dry-run", is_flag=True, help="Parse and summarize the file without writing anything.")
@@ -114,7 +123,7 @@ def create_app(config: dict | None = None) -> Flask:
             like = f"%{q}%"
             query = query.filter(or_(Course.subject.ilike(like), Course.number.ilike(like),
                                      Course.title.ilike(like)))
-        rows = query.order_by(Course.subject, Course.number).limit(200).all()
+        rows = query.order_by(Course.subject, Course.number).limit(5000).all()
         return jsonify([{"id": c.id, "code": c.code, "title": c.title, "credits": c.credits} for c in rows])
 
     @app.get("/api/terms")
@@ -123,7 +132,8 @@ def create_app(config: dict | None = None) -> Flask:
 
     def _term_sections(code: str) -> list[Section]:
         term = Term.query.filter_by(code=code).first() or abort(404, "unknown term")
-        return Section.query.filter_by(term_id=term.id).all()
+        return (Section.query.filter_by(term_id=term.id)
+                .options(selectinload(Section.course), selectinload(Section.meetings)).all())
 
     @app.get("/api/terms/<code>/sections")
     def sections(code):
@@ -148,6 +158,8 @@ def create_app(config: dict | None = None) -> Flask:
         groups = PrereqGroup.query.filter_by(course_id=course.id).all()
         prereqs = {course.code: [[i.required_course.code for i in g.items] for g in groups]}
         done = {c.strip() for c in request.args.get("completed", "").split(",") if c.strip()}
-        return jsonify({"course": course.code, "missing": rules.missing_prereqs(course.code, prereqs, done)})
+        return jsonify({"course": course.code, "missing": rules.missing_prereqs(course.code, prereqs, done),
+                        # With no prerequisite rows at all, "nothing missing" would mean "nothing loaded".
+                        "prereq_data_loaded": db.session.query(PrereqGroup.id).first() is not None})
 
     return app

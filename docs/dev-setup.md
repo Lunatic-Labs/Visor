@@ -49,6 +49,20 @@ flask --app wsgi import-sis "../data/private/Lipscomb University Transfer Course
 
 Running it twice is safe. To see only real data locally, use a fresh database and skip `flask seed`'s fake equivalencies. Don't load it into the shared Neon database without checking with the team first (it shows up on the public site). Details: `specs/03-design-equivalencies.md`, "SIS import".
 
+## Loading the real class schedule (and the full list of Lipscomb courses)
+
+Lipscomb's public class-schedule page has Export > CSV. Save that file in `data/private/` (gitignored), then:
+
+```
+cd backend
+flask --app wsgi import-schedule --dry-run "../data/private/2027 Spring Semester Class Schedule  Lipscomb University.csv"
+flask --app wsgi import-schedule "../data/private/2027 Spring Semester Class Schedule  Lipscomb University.csv"
+```
+
+One row per section becomes a course (if new), a section, and its meeting times. Running it twice is safe, and courses already in the database (e.g. from the SIS import) are never overwritten. Rows it can't use fully (a section code over 4 characters, meetings listed as calendar dates, an end time before the start) are listed at the end. It reads only this export's format, not the four-file format below. The export has no prerequisites. Details: `backend/visor/schedule_import.py`.
+
+To see only real data locally, import the SIS file and the schedule into a fresh database and skip `flask seed`.
+
 ## Loading the registrar's catalog and section schedule
 
 Same idea, for `terms.csv` / `courses.csv` / `prereqs.csv` / `sections.csv` (format: `data/sample/README.md`):
