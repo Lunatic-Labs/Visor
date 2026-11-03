@@ -266,3 +266,46 @@ def test_upload_rejects_the_wrong_file_without_changing_anything(app, client, tm
 def test_cli_import_also_stamps_the_time(app, client, tmp_path):
     app.test_cli_runner().invoke(args=["import-schedule", str(write(tmp_path, row(), name="cli.csv"))])
     assert term(client)["schedule_file"] == "cli.csv"
+
+
+# --- re-importing changes -------------------------------------------------------------------
+
+def meetings_of(code="1013", sec="01"):
+    s = Section.query.join(Course).filter(Course.number == code, Section.section_no == sec).one()
+    return sorted((m.days, m.start_time.strftime("%H:%M"), m.end_time.strftime("%H:%M")) for m in s.meetings)
+
+
+def test_a_changed_meeting_time_replaces_the_old_one(app, tmp_path):
+    load_schedule(write(tmp_path, row(days="MonWedFri", start="09:00 AM", end="09:50 AM")))
+    assert meetings_of() == [("MWF", "09:00", "09:50")]
+    c = load_schedule(write(tmp_path, row(days="TuesThurs", start="01:20 PM", end="02:35 PM"))).counts
+    assert meetings_of() == [("TR", "13:20", "14:35")]
+    assert (c["meetings_added"], c["meetings_removed"]) == (1, 1)
+
+
+def test_a_second_pattern_can_be_added_and_dropped(app, tmp_path):
+    load_schedule(write(tmp_path, row(days="Mon", start="01:00 PM", end="01:50 PM")))
+    load_schedule(write(tmp_path, row(days="Mon/Wed", start="01:00 PM/01:00 PM", end="01:50 PM/02:45 PM")))
+    assert meetings_of() == [("M", "13:00", "13:50"), ("W", "13:00", "14:45")]
+    load_schedule(write(tmp_path, row(days="Mon", start="01:00 PM", end="01:50 PM")))
+    assert meetings_of() == [("M", "13:00", "13:50")]
+
+
+def test_a_section_that_became_online_loses_its_meeting_times(app, tmp_path):
+    load_schedule(write(tmp_path, row()))
+    load_schedule(write(tmp_path, row(days="", start="", end="")))
+    assert meetings_of() == []
+
+
+def test_unreadable_meeting_info_leaves_the_existing_times_alone(app, tmp_path):
+    load_schedule(write(tmp_path, row(days="MonWedFri", start="09:00 AM", end="09:50 AM")))
+    c = load_schedule(write(tmp_path, row(days="Thurs", start="11:55 AM", end="02:35 AM"))).counts
+    assert meetings_of() == [("MWF", "09:00", "09:50")]
+    assert (c["meetings_added"], c["meetings_removed"]) == (0, 0)
+
+
+def test_a_section_missing_from_the_new_file_is_kept(app, tmp_path):
+    """Documents the current behavior: cancelled sections are not removed."""
+    load_schedule(write(tmp_path, row(sec="01"), row(sec="02")))
+    load_schedule(write(tmp_path, row(sec="01")))
+    assert Section.query.join(Course).filter(Course.number == "1013").count() == 2

@@ -16,7 +16,9 @@ What it does with the quirks in the real export:
 - Times are 12-hour ("01:00 PM"), days are words ("MonWedFri"); both are converted.
 - "MonWed/TuesThurs" with "09:00 AM/09:25 AM" is two meeting patterns; they are paired up.
 - Meetings listed as calendar dates, or with an end before the start, are not imported. The section
-  is still imported, without meetings, and the problem is reported.
+  is still imported, its meeting times are left as they were, and the problem is reported.
+- On a re-import a section's meeting times are made to match the file (a changed time replaces the
+  old one). Sections that are no longer in the file are NOT removed.
 - A course taught under several titles or credit values (special topics, variable-credit "V"
   courses) gets its most common title and its highest credit value.
 - Courses already in the database are left alone, so the SIS import's course data is never
@@ -62,6 +64,7 @@ class PlannedSection:
     capacity: int
     enrolled: int
     meetings: list[Meeting]
+    meetings_known: bool = True  # False when the row's meeting info couldn't be read; leave existing times alone
 
 
 @dataclass
@@ -185,17 +188,20 @@ def parse_schedule(records: list[dict]) -> SchedulePlan:
                 plan.issues.append(f"{label}: {e}, section skipped")
             else:
                 meetings: list[Meeting] = []
+                known = True
                 try:
                     meetings = parse_meetings(r["Meeting Days"], r["Start Time"], r["End Time"])
                 except DatedMeetings as e:
+                    known = False
                     plan.dated_meeting_sections += 1
-                    plan.issues.append(f"{label}: {e}; imported without meeting times")
+                    plan.issues.append(f"{label}: {e}; meeting times not imported")
                 except ValueError as e:
+                    known = False
                     plan.bad_meeting_sections += 1
-                    plan.issues.append(f"{label}: {e}; imported without meeting times")
+                    plan.issues.append(f"{label}: {e}; meeting times not imported")
                 plan.terms.setdefault(term_code, term_name)
                 plan.sections.append(PlannedSection(line, subject, number, section_no, term_code,
-                                                    capacity, enrolled, meetings))
+                                                    capacity, enrolled, meetings, known))
                 continue
         plan.skipped_sections += 1
 
@@ -224,8 +230,8 @@ class ScheduleResult:
 def load_schedule(path: str | Path, dry_run: bool = False, filename: str | None = None) -> ScheduleResult:
     """Load the schedule export into the database. Needs an app context.
 
-    Idempotent: a section already there is updated only if its seats changed, and meeting times
-    are only ever added. With dry_run=True, reports what would happen and saves nothing.
+    Idempotent: a section already there is updated only if its seats changed, and its meeting
+    times are made to match the file. With dry_run=True, reports what would happen and saves nothing.
     Every real run is logged per term (ScheduleImport) so the Schedule screen can show when the
     seat counts were last refreshed, even if nothing changed. filename is what to record for it
     (an upload's original name; defaults to the file's own name).
@@ -235,7 +241,7 @@ def load_schedule(path: str | Path, dry_run: bool = False, filename: str | None 
     plan = parse_schedule(read_schedule(path))
     counts = {"sections_in_file": len(plan.sections),
               "terms_added": 0, "courses_added": 0, "courses_already_there": 0, "existing_courses_differ": 0,
-              "sections_added": 0, "sections_updated": 0, "meetings_added": 0,
+              "sections_added": 0, "sections_updated": 0, "meetings_added": 0, "meetings_removed": 0,
               "sections_without_meetings": 0, "sections_skipped": plan.skipped_sections}
 
     terms = {t.code: t for t in Term.query.all()}
@@ -271,11 +277,19 @@ def load_schedule(path: str | Path, dry_run: bool = False, filename: str | None 
         elif (sec.capacity, sec.enrolled_count) != (ps.capacity, ps.enrolled):
             sec.capacity, sec.enrolled_count = ps.capacity, ps.enrolled
             counts["sections_updated"] += 1
-        have = {(m.days, m.start_time, m.end_time) for m in sec.meetings}
-        for days, start, end in ps.meetings:
-            if (days, start, end) not in have:
-                sec.meetings.append(MeetingTime(days=days, start_time=start, end_time=end))
-                counts["meetings_added"] += 1
+        if ps.meetings_known:
+            # Mirror the file: a time that changed is replaced, not stacked next to the old one.
+            have = {(m.days, m.start_time, m.end_time): m for m in sec.meetings}
+            want = set(ps.meetings)
+            for key, meeting in have.items():
+                if key not in want:
+                    sec.meetings.remove(meeting)
+                    counts["meetings_removed"] += 1
+            for days, start, end in ps.meetings:
+                if (days, start, end) not in have:
+                    have[(days, start, end)] = MeetingTime(days=days, start_time=start, end_time=end)
+                    sec.meetings.append(have[(days, start, end)])
+                    counts["meetings_added"] += 1
         counts["sections_without_meetings"] += not ps.meetings
 
     if dry_run:

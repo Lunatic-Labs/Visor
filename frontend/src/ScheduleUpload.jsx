@@ -7,6 +7,7 @@ const LINES = [
   ['sections_updated', 'Seat counts updated'],
   ['courses_added', 'New courses'],
   ['meetings_added', 'New meeting times'],
+  ['meetings_removed', 'Old meeting times removed'],
   ['sections_skipped', 'Sections skipped'],
 ]
 
