@@ -8,6 +8,7 @@ const LINES = [
   ['courses_added', 'New courses'],
   ['meetings_added', 'New meeting times'],
   ['meetings_removed', 'Old meeting times removed'],
+  ['sections_removed', 'Classes removed (no longer in the file)'],
   ['sections_skipped', 'Sections skipped'],
 ]
 
@@ -16,6 +17,7 @@ const LINES = [
 export default function ScheduleUpload() {
   const [file, setFile] = useState(null)
   const [checkOnly, setCheckOnly] = useState(false)
+  const [removeMissing, setRemoveMissing] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -34,11 +36,18 @@ export default function ScheduleUpload() {
     e.preventDefault()
     setError(''); setResult(null)
     if (!file) { setError('Choose the schedule CSV first.'); return }
+    if (removeMissing && !checkOnly && !window.confirm(
+      "This permanently removes every class that isn't in this file. Continue?\n\n" +
+      "(Tip: tick 'Check only' first to see how many.)")) return
     const body = new FormData()
     body.append('schedule', file)
+    const params = new URLSearchParams()
+    if (checkOnly) params.set('dry_run', '1')
+    if (removeMissing) params.set('remove_missing', '1')
+    const qs = params.toString()
     setLoading(true)
     try {
-      const r = await fetch(`/api/import/schedule${checkOnly ? '?dry_run=1' : ''}`, { method: 'POST', body })
+      const r = await fetch(`/api/import/schedule${qs ? `?${qs}` : ''}`, { method: 'POST', body })
       const data = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(data.error || `Upload failed (${r.status})`)
       setResult(data)
@@ -69,20 +78,26 @@ export default function ScheduleUpload() {
           Schedule CSV
           <input type="file" accept=".csv,text/csv" onChange={(e) => setFile(e.target.files[0] || null)} />
         </label>
-        <label>
-          <span><input type="checkbox" checked={checkOnly} onChange={(e) => setCheckOnly(e.target.checked)} />{' '}
-            Check only, don't save</span>
-        </label>
         <button type="submit" disabled={loading}>
           {loading ? 'Uploading…' : checkOnly ? 'Check file' : 'Upload schedule'}
         </button>
+        <div className="upload-options">
+          <label className="check">
+            <input type="checkbox" checked={removeMissing} onChange={(e) => setRemoveMissing(e.target.checked)} />
+            This file is the complete schedule: remove classes that aren't in it
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={checkOnly} onChange={(e) => setCheckOnly(e.target.checked)} />
+            Check only, don't save (shows what would change)
+          </label>
+        </div>
       </form>
       {error && <p className="error">{error}</p>}
 
       {result && (
         <div className={`lookup-result status-${result.ok ? 'confirmed' : 'proposed'}`}>
           <h2>
-            {result.dry_run ? 'Checked, nothing saved' : 'Schedule updated'}
+            {result.dry_run ? 'Checked, nothing saved. This is what would change' : 'Schedule updated'}
             <span className={`badge badge-${result.ok ? 'confirmed' : 'proposed'}`}>
               {result.ok ? 'no problems' : `${result.issues.length} to look at`}
             </span>
@@ -94,6 +109,14 @@ export default function ScheduleUpload() {
             ))}
             {LINES.every(([key]) => !result.counts[key]) && <li>Nothing changed. It was already up to date.</li>}
           </ul>
+          {!result.remove_missing && result.counts.sections_not_in_file > 0 && (
+            <p className="muted small">
+              {result.counts.sections_not_in_file.toLocaleString()} class{result.counts.sections_not_in_file === 1 ? '' : 'es'} in
+              Visor {result.counts.sections_not_in_file === 1 ? "isn't" : "aren't"} in this file, so
+              {result.counts.sections_not_in_file === 1 ? ' it was' : ' they were'} kept. If this file is the complete
+              schedule, tick "remove classes that aren't in it" to drop them.
+            </p>
+          )}
           {result.issues.length > 0 && (
             <details>
               <summary>{result.issues.length} row{result.issues.length === 1 ? '' : 's'} need a look</summary>

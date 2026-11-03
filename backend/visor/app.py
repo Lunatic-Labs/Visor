@@ -94,10 +94,16 @@ def create_app(config: dict | None = None) -> Flask:
     @app.cli.command("import-schedule")
     @click.argument("path", type=click.Path(exists=True, dir_okay=False))
     @click.option("--dry-run", is_flag=True, help="Check the file and report what would happen, without saving.")
-    def import_schedule_cmd(path, dry_run):
+    @click.option("--remove-missing", is_flag=True,
+                  help="Also remove sections the file no longer lists. Use only with the complete schedule.")
+    def import_schedule_cmd(path, dry_run, remove_missing):
         """Load a class schedule exported from the university's public schedule page (.csv)."""
-        from .schedule_import import load_schedule
-        print(("Dry run, nothing saved: " if dry_run else "Imported: ") + str(load_schedule(path, dry_run=dry_run)))
+        from .schedule_import import RemovalTooLarge, load_schedule
+        try:
+            result = load_schedule(path, dry_run=dry_run, remove_missing=remove_missing)
+        except RemovalTooLarge as e:
+            raise click.ClickException(str(e)) from None
+        print(("Dry run, nothing saved: " if dry_run else "Imported: ") + str(result))
 
     @app.cli.command("import-sis")
     @click.argument("path", type=click.Path(exists=True, dir_okay=False))

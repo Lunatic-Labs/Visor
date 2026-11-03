@@ -15,7 +15,7 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
-from .schedule_import import load_schedule
+from .schedule_import import RemovalTooLarge, load_schedule
 from .seed import load
 
 bp = Blueprint("catalog_import", __name__, url_prefix="/api")
@@ -46,18 +46,23 @@ def import_catalog():
 @bp.post("/import/schedule")
 def import_schedule():
     """multipart/form-data with one file field, schedule: the CSV from the university's public
-    class-schedule page (Export > CSV). ?dry_run=1 checks it without saving. A real run also
-    records the time, which the Schedule screen shows as "last updated"."""
+    class-schedule page (Export > CSV). ?dry_run=1 checks it without saving. ?remove_missing=1
+    also removes sections the file no longer lists (409 if that looks like a partial export). A
+    real run also records the time, which the Schedule screen shows as "last updated"."""
     file = request.files.get("schedule")
     if file is None or not file.filename:
         return jsonify({"error": "choose the class schedule CSV to upload"}), 400
     dry_run = request.args.get("dry_run", "").lower() in ("1", "true", "yes")
+    remove_missing = request.args.get("remove_missing", "").lower() in ("1", "true", "yes")
 
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "schedule.csv"
         file.save(path)
         try:
-            result = load_schedule(path, dry_run=dry_run, filename=os.path.basename(file.filename))
+            result = load_schedule(path, dry_run=dry_run, filename=os.path.basename(file.filename),
+                                   remove_missing=remove_missing)
+        except RemovalTooLarge as e:
+            return jsonify({"error": str(e)}), 409
         except (UnicodeDecodeError, csv.Error):
             return jsonify({"error": "that doesn't look like a CSV file Visor can read"}), 400
         except ValueError as e:
@@ -65,4 +70,5 @@ def import_schedule():
 
     if result.counts["sections_in_file"] == 0:
         return jsonify({"error": "no sections found in that file. Is it the class schedule (Export > CSV)?"}), 400
-    return jsonify({"ok": not result.issues, "dry_run": dry_run, "counts": result.counts, "issues": result.issues})
+    return jsonify({"ok": not result.issues, "dry_run": dry_run, "remove_missing": remove_missing,
+                    "counts": result.counts, "issues": result.issues})

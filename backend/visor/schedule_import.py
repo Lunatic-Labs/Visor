@@ -18,7 +18,7 @@ What it does with the quirks in the real export:
 - Meetings listed as calendar dates, or with an end before the start, are not imported. The section
   is still imported, its meeting times are left as they were, and the problem is reported.
 - On a re-import a section's meeting times are made to match the file (a changed time replaces the
-  old one). Sections that are no longer in the file are NOT removed.
+  old one). Sections that are no longer in the file are kept unless remove_missing is asked for.
 - A course taught under several titles or credit values (special topics, variable-credit "V"
   courses) gets its most common title and its highest credit value.
 - Courses already in the database are left alone, so the SIS import's course data is never
@@ -50,8 +50,15 @@ _SEASON = {"spring": "SP", "summer": "SU", "fall": "FA", "winter": "WI"}
 Meeting = tuple[str, time, time]
 
 
+REMOVAL_ALWAYS_OK = 10  # removing this few sections never trips the partial-export guard
+
+
 class DatedMeetings(ValueError):
     """Meets on listed calendar dates rather than a weekly pattern."""
+
+
+class RemovalTooLarge(ValueError):
+    """Removing sections not in the file would delete so much it must be a partial export."""
 
 
 @dataclass
@@ -76,6 +83,8 @@ class SchedulePlan:
     skipped_sections: int = 0
     dated_meeting_sections: int = 0
     bad_meeting_sections: int = 0
+    # Sections that ARE in the file but couldn't be read: never treated as "missing from the file".
+    unreadable: set[tuple[str, str, str]] = field(default_factory=set)
 
 
 # --- pure helpers ----------------------------------------------------------------------------
@@ -171,6 +180,7 @@ def parse_schedule(records: list[dict]) -> SchedulePlan:
         except ValueError as e:
             plan.issues.append(f"{label}: {e}")
             plan.skipped_sections += 1
+            plan.unreadable.add((subject, number, (r["Section Code"] or "").strip()))
             continue
         titles.setdefault(key, Counter())[r["Course Name"].strip() or code] += 1
         credits[key] = max(credits.get(key, 0), hours)
@@ -186,6 +196,7 @@ def parse_schedule(records: list[dict]) -> SchedulePlan:
                 capacity, enrolled = _whole(r["Total Seats"], "total seats"), _whole(r["Seats Filled"], "seats filled")
             except ValueError as e:
                 plan.issues.append(f"{label}: {e}, section skipped")
+                plan.unreadable.add((subject, number, section_no))
             else:
                 meetings: list[Meeting] = []
                 known = True
@@ -227,11 +238,17 @@ class ScheduleResult:
         return summary + (f"\n{len(self.issues)} note(s):\n" + "\n".join(self.issues) if self.issues else "")
 
 
-def load_schedule(path: str | Path, dry_run: bool = False, filename: str | None = None) -> ScheduleResult:
+def load_schedule(path: str | Path, dry_run: bool = False, filename: str | None = None,
+                  remove_missing: bool = False, max_remove_fraction: float = 0.25) -> ScheduleResult:
     """Load the schedule export into the database. Needs an app context.
 
     Idempotent: a section already there is updated only if its seats changed, and its meeting
     times are made to match the file. With dry_run=True, reports what would happen and saves nothing.
+    remove_missing=True also deletes sections the file no longer lists (cancelled classes), for the
+    terms the file covers; use it only with the complete schedule. As a guard against a partial
+    export (the page's filters apply to the CSV), removing more than 10 sections AND more than
+    max_remove_fraction of the term raises RemovalTooLarge and changes nothing. The summary always
+    says how many sections aren't in the file (sections_not_in_file), removed or not.
     Every real run is logged per term (ScheduleImport) so the Schedule screen can show when the
     seat counts were last refreshed, even if nothing changed. filename is what to record for it
     (an upload's original name; defaults to the file's own name).
@@ -281,8 +298,8 @@ def load_schedule(path: str | Path, dry_run: bool = False, filename: str | None 
             # Mirror the file: a time that changed is replaced, not stacked next to the old one.
             have = {(m.days, m.start_time, m.end_time): m for m in sec.meetings}
             want = set(ps.meetings)
-            for key, meeting in have.items():
-                if key not in want:
+            for slot, meeting in have.items():
+                if slot not in want:
                     sec.meetings.remove(meeting)
                     counts["meetings_removed"] += 1
             for days, start, end in ps.meetings:
@@ -291,6 +308,26 @@ def load_schedule(path: str | Path, dry_run: bool = False, filename: str | None 
                     sec.meetings.append(have[(days, start, end)])
                     counts["meetings_added"] += 1
         counts["sections_without_meetings"] += not ps.meetings
+
+    # Sections already in Visor, for a term this file covers, that the file no longer lists.
+    file_terms = {terms[code].id for code in plan.terms}
+    in_file = {(courses[(ps.subject, ps.number)].id, terms[ps.term_code].id, ps.section_no) for ps in plan.sections}
+    course_key = {c.id: k for k, c in courses.items()}
+    missing = [s for k, s in sections.items()
+               if k[1] in file_terms and k not in in_file and (*course_key[s.course_id], s.section_no) not in plan.unreadable]
+    counts["sections_not_in_file"] = len(missing)
+    counts["sections_removed"] = 0
+    if remove_missing and missing:
+        before = sum(1 for k in sections if k[1] in file_terms) - counts["sections_added"]
+        if len(missing) > max(REMOVAL_ALWAYS_OK, max_remove_fraction * before):
+            db.session.rollback()
+            raise RemovalTooLarge(
+                f"That would remove {len(missing):,} of {before:,} existing sections, which looks like a partial "
+                "export (for example one filtered by level or subject). Nothing was changed. Export the complete "
+                "schedule and try again.")
+        for s in missing:
+            db.session.delete(s)
+        counts["sections_removed"] = len(missing)
 
     if dry_run:
         db.session.rollback()

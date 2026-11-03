@@ -309,3 +309,85 @@ def test_a_section_missing_from_the_new_file_is_kept(app, tmp_path):
     load_schedule(write(tmp_path, row(sec="01"), row(sec="02")))
     load_schedule(write(tmp_path, row(sec="01")))
     assert Section.query.join(Course).filter(Course.number == "1013").count() == 2
+
+
+
+# --- removing sections the file no longer lists ----------------------------------------------
+# These use their own terms: the shared test database already has sample sections in 2027SP, which
+# (correctly) would count as "not in the file" for a 2027SP upload.
+
+from visor.schedule_import import RemovalTooLarge  # noqa: E402
+
+FALL = "2035 Fall Full Term"
+
+
+def frow(**kw):
+    return row(term=FALL, **kw)
+
+
+def sections_of(number="1013"):
+    return sorted(s.section_no for s in Section.query.join(Course).filter(Course.number == number))
+
+
+def test_missing_sections_are_reported_but_kept_by_default(app, tmp_path):
+    load_schedule(write(tmp_path, frow(sec="01"), frow(sec="02"), frow(sec="03")))
+    c = load_schedule(write(tmp_path, frow(sec="01"))).counts
+    assert c["sections_not_in_file"] == 2 and c["sections_removed"] == 0
+    assert sections_of() == ["01", "02", "03"]
+
+
+def test_remove_missing_deletes_cancelled_sections_and_their_meeting_times(app, tmp_path):
+    load_schedule(write(tmp_path, frow(sec="01"), frow(sec="02"), frow(sec="03")))
+    meetings_before = MeetingTime.query.count()
+    c = load_schedule(write(tmp_path, frow(sec="01")), remove_missing=True).counts
+    assert c["sections_removed"] == 2 and sections_of() == ["01"]
+    assert MeetingTime.query.count() == meetings_before - 2
+
+
+def test_remove_missing_only_touches_terms_the_file_covers(app, tmp_path):
+    other = "2036 Fall Full Term"
+    load_schedule(write(tmp_path, frow(sec="01"), row(sec="01", code="DEMO2013", term=other)))
+    load_schedule(write(tmp_path, frow(sec="02")), remove_missing=True)
+    assert sections_of("1013") == ["02"]
+    assert sections_of("2013") == ["01"]  # a different term the file doesn't cover is left alone
+
+
+def test_remove_missing_dry_run_reports_without_deleting(app, tmp_path):
+    load_schedule(write(tmp_path, frow(sec="01"), frow(sec="02")))
+    c = load_schedule(write(tmp_path, frow(sec="01")), remove_missing=True, dry_run=True).counts
+    assert c["sections_removed"] == 1 and sections_of() == ["01", "02"]
+
+
+def test_a_section_in_the_file_but_unreadable_is_not_treated_as_missing(app, tmp_path):
+    load_schedule(write(tmp_path, frow(sec="01"), frow(sec="02")))
+    broken = frow(sec="02").replace('"24","0","24"', '"lots","0","24"')
+    c = load_schedule(write(tmp_path, frow(sec="01"), broken), remove_missing=True).counts
+    assert c["sections_skipped"] == 1 and c["sections_removed"] == 0
+    assert sections_of() == ["01", "02"]
+
+
+def test_a_partial_export_is_refused_and_changes_nothing(app, client, tmp_path):
+    from visor.models import ScheduleImport
+    load_schedule(write(tmp_path, *[frow(sec=f"{n:02d}") for n in range(1, 13)]))
+    before = (Section.query.count(), ScheduleImport.query.count())
+    partial = write(tmp_path, frow(sec="01"), frow(sec="50", code="DEMO9013"), name="partial.csv")
+    with pytest.raises(RemovalTooLarge, match="partial export"):
+        load_schedule(partial, remove_missing=True)
+    r = upload(client, partial, "?remove_missing=1")
+    assert r.status_code == 409 and "Nothing was changed" in r.json["error"]
+    assert (Section.query.count(), ScheduleImport.query.count()) == before
+    assert Course.query.filter_by(subject="DEMO", number="9013").count() == 0  # the file's new course rolled back too
+
+
+def test_upload_can_remove_missing_sections(app, client, tmp_path):
+    upload(client, write(tmp_path, frow(sec="01"), frow(sec="02"), name="a.csv"))
+    r = upload(client, write(tmp_path, frow(sec="01"), name="b.csv"), "?remove_missing=1")
+    assert r.status_code == 200 and r.json["counts"]["sections_removed"] == 1
+    assert sections_of() == ["01"]
+
+
+def test_cli_remove_missing(app, tmp_path):
+    runner = app.test_cli_runner()
+    runner.invoke(args=["import-schedule", str(write(tmp_path, frow(sec="01"), frow(sec="02"), name="a.csv"))])
+    r = runner.invoke(args=["import-schedule", str(write(tmp_path, frow(sec="01"), name="b.csv")), "--remove-missing"])
+    assert r.exit_code == 0 and "sections_removed=1" in r.output and sections_of() == ["01"]
