@@ -10,6 +10,7 @@ This came from the 10/1 meeting with Ms. Sandra Hood (Registrar). Her #2 ask, De
 
 - Design spec for the current work: `specs/03-design-equivalencies.md` (tables, API contract, rules interface)
 - Older data model: `specs/02-design-data-model.md`
+- Degree audit (next, draft): `specs/04-design-degree-audit.md` (KAN-48, epic KAN-12)
 - Professor: Dr. Nordstrom. Registrar: Ms. Sandra Hood. IT / FERPA: Brett Hanson.
 
 ## Team and who owns what
@@ -28,7 +29,7 @@ Team chat: Discord "Visor" server (#general, #notes-resources). Jira: https://vi
 2. **Nothing auto-confirms an equivalency.** Rules and the app may only *propose*. `confirmed` / `rejected` always carry `decided_by` (a person).
 3. **`backend/visor/rules/` is pure Python.** No Flask, no SQLAlchemy, no DB imports. Dataclasses in, dataclasses out, unit tested. The API layer converts.
 4. **Fake data only in git.** Everything committed under `data/` is made up. Real registrar files (the SIS equivalency export, test transcripts, degree plans) go in `data/private/`, which is gitignored; the repo is public. Never commit real student data, real transcripts, or anything FERPA-covered. Official transcripts are Level 4 data and need IT sign-off.
-5. **Never commit secrets.** `DATABASE_URL` lives in Vercel env vars and your local `.env` (gitignored). No connection strings in code, commits, or PR text.
+5. **Never commit secrets.** `DATABASE_URL` and `VISOR_WRITE_TOKEN` live in Vercel env vars and your local `.env` (gitignored). No connection strings in code, commits, or PR text.
 6. **Never push to `main`.** Work on your branch, open a PR, get one review. `main` deploys to production automatically.
 7. **Keep PRs to your own task.** Don't edit another person's files on their branch; leave a PR comment instead.
 
@@ -62,6 +63,7 @@ cd frontend && npm install && npm run dev        # http://localhost:5173, /api p
 | `backend/visor/equivalencies.py` | Equivalency API |
 | `backend/visor/rules/` | Pure rules engine (conflicts, prereqs; equivalency matching coming) |
 | `backend/visor/models.py`, `seed.py` | SQLAlchemy models, CSV loaders |
+| `backend/visor/auth.py` | `@require_write_token`: every route that writes to the DB must use it (KAN-46) |
 | `backend/visor/sis_import.py` | Importer for the registrar's SIS equivalency export (`flask import-sis`) |
 | `backend/visor/schedule_import.py` | Importer for the public class-schedule CSV export (`flask import-schedule`, or the Import tab via `POST /api/import/schedule`): courses, sections, meetings, and a "last updated" log |
 | `data/sample/`, `data/equivalencies/` | Fake seed data; `data/equivalencies/README.md` lists the demo lookups |

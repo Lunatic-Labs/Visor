@@ -43,6 +43,8 @@ Why `status` lives on the equivalency and not the external course: one external 
 
 ## API contract
 
+**Write protection (KAN-46, stopgap until login, KAN-30).** `POST /api/equivalencies`, `PUT /api/equivalencies/<id>`, `POST /api/equivalencies/<id>/flag`, `POST /api/equivalencies/lookup/flag`, `POST /api/equivalencies/<id>/make-primary`, `POST /api/equivalencies/<id>/approve-also`, `POST /api/schools`, and the uploads `POST /api/import/catalog` and `POST /api/import/schedule` need header `X-Visor-Token` matching the `VISOR_WRITE_TOKEN` env var: `401` if it's missing or wrong. If the env var isn't set, writes return `403`, except under `flask run --debug` and in tests, which stay open. GETs and `POST /api/equivalencies/lookup` stay open. (Lookup can insert an unseen external course; that's accepted for now.) New write routes use `@require_write_token` or `bp.before_request(write_guard)` from `backend/visor/auth.py`.
+
 All JSON. Errors are `{"error": "message"}` with a 4xx status. The frontend builds against these shapes with mock data first.
 
 ### `GET /api/schools`
@@ -108,6 +110,7 @@ A candidate's `id` is the equivalency row it came from, so the UI can confirm, r
 
 ```json
 {"status": "unknown", "external_course": {...}, "equivalency": null, "candidates": []}
+// after someone flags it: "equivalency" is the placeholder row, with pending_reviews >= 1
 ```
 
 If the external course isn't in the table yet, the backend creates it from the request (so it can be flagged), then runs the rules.
@@ -115,7 +118,19 @@ If the external course isn't in the table yet, the backend creates it from the r
 ### `POST /api/equivalencies/<id>/flag`
 
 Request: `{"reviewer": "dr.nordstrom@lipscomb.edu", "requested_by": "registrar", "notes": "Looks like CS 1113?"}`
-Response: `201` with the `equivalency_review` row. If the lookup returned `unknown`, the frontend first calls `POST /api/equivalencies` to create a `proposed` row with `course_id: null`, then flags it.
+Response: `201` with the `equivalency_review` row. For an `unknown` result there's no row to flag, so use the next endpoint instead.
+
+### `POST /api/equivalencies/lookup/flag` (KAN-47)
+
+Flag straight from a lookup, in one call, whatever the result was. Body is the lookup body plus the review fields:
+`{"school_id": 3, "subject": "COMM", "number": "2025", "reviewer": "comm-dept@lipscomb.edu", "requested_by": "registrar", "notes": "Public speaking?"}`
+
+- **Proposed:** the review goes on the top proposed row.
+- **Unknown:** creates a placeholder row (`status: proposed`, `kind: direct`, `course_id: null`, `source: registrar`) and puts the review on it. Flagging again reuses the same placeholder.
+- **Confirmed:** `409`, since there's nothing to review.
+- Response `201`: `{"external_course": {...}, "equivalency": {...}, "review": {...}}`. Needs the write token (see above).
+
+After a flag, the lookup for that course still says `unknown`, but `equivalency` is the placeholder (with `pending_reviews`) instead of `null`, so the UI can show "waiting on professor review" instead of the flag button. Placeholders are never offered as candidates.
 
 ### `POST /api/equivalencies` and `PUT /api/equivalencies/<id>`
 

@@ -116,16 +116,14 @@ export default function TransferLookup({ actor, onChange }) {
 
   function flagUnknown() {
     if (!reviewer.trim()) { setActionError('Enter who should review it first.'); return }
-    act(async () => {
-      const row = placeholder || await api('/api/equivalencies', {
-        method: 'POST',
-        body: { external_course_id: ext.id, kind: 'direct', course_id: null, status: 'proposed',
-          notes: 'No match on file; flagged from Look Up' },
-      })
-      return api(`/api/equivalencies/${row.id}/flag`, {
-        method: 'POST', body: { reviewer: reviewer.trim(), requested_by: actor.trim() || 'registrar' },
-      })
-    }, `Flagged for ${reviewer.trim()}. It's in the review queue until someone records the answer.`)
+    // KAN-47's endpoint makes (or reuses) the "waiting on review" placeholder and flags it in one step.
+    act(() => api('/api/equivalencies/lookup/flag', {
+      method: 'POST',
+      body: {
+        school_id: ext.school_id, subject: ext.subject, number: ext.number, title: ext.title,
+        reviewer: reviewer.trim(), requested_by: actor.trim() || 'registrar',
+      },
+    }), `Flagged for ${reviewer.trim()}. It's in the review queue until someone records the answer.`)
   }
 
   return (

@@ -12,6 +12,7 @@ from flask import Blueprint, jsonify, request
 from sqlalchemy import func, or_
 from sqlalchemy.orm import selectinload
 
+from .auth import require_write_token
 from .models import (EQUIV_KINDS, EQUIV_SOURCES, EQUIV_STATUSES, Course, Equivalency, EquivalencyReview,
                      ExternalCourse, School, db)
 from .sis_import import school_kind
@@ -71,6 +72,7 @@ def schools():
 
 
 @bp.post("/schools")
+@require_write_token
 def create_school():
     """Add a school students transfer from. If one with the same name (ignoring case) exists, it is
     returned instead (200), so the same school is never added twice under one spelling."""
@@ -161,15 +163,17 @@ def _suggest(external: ExternalCourse) -> list[dict]:
     return []
 
 
-@bp.post("/equivalencies/lookup")
-def lookup():
-    body = request.get_json(silent=True) or {}
+def _external_from_body(body: dict):
+    """Find (or record) the external course a lookup/flag body describes.
+
+    Returns (ExternalCourse, None) or (None, error response).
+    """
     school_id, subject, number = body.get("school_id"), body.get("subject"), body.get("number")
     if not isinstance(school_id, int) or not subject or not number:
-        return _err("school_id (int), subject, and number are required")
+        return None, _err("school_id (int), subject, and number are required")
     school = db.session.get(School, school_id)
     if school is None:
-        return _err("unknown school", 404)
+        return None, _err("unknown school", 404)
     subject, number = str(subject).strip().upper(), str(number).strip()
     title = (body.get("title") or "").strip()
     credits = body.get("credits")
@@ -177,7 +181,7 @@ def lookup():
         credits = None
     elif not (isinstance(credits, int) or (isinstance(credits, str) and credits.strip().isdigit())) \
             or not 0 <= int(credits) <= 30:
-        return _err("credits must be a whole number of hours")
+        return None, _err("credits must be a whole number of hours")
     else:
         credits = int(credits)
 
@@ -189,12 +193,31 @@ def lookup():
                              title=(title or f"{subject} {number}")[:160], catalog_year=str(date.today().year))
         db.session.add(ext)
         db.session.commit()
+    return ext, None
 
+
+def _is_placeholder(q: Equivalency) -> bool:
+    """A proposed direct row with no course: "we don't know yet, a professor is looking" (KAN-47)."""
+    return q.status == "proposed" and q.kind == "direct" and q.course_id is None
+
+
+def _live_rows(ext: ExternalCourse):
+    """(confirmed, proposed-with-an-answer, placeholders) for an external course."""
     rows = Equivalency.query.filter(Equivalency.external_course_id == ext.id,
                                     Equivalency.status.in_(("confirmed", "proposed"))).all()
     confirmed = sorted((q for q in rows if q.status == "confirmed"), key=lambda q: q.id)
-    proposed = sorted((q for q in rows if q.status == "proposed"),
+    proposed = sorted((q for q in rows if q.status == "proposed" and not _is_placeholder(q)),
                       key=lambda q: q.confidence or 0, reverse=True)
+    placeholders = [q for q in rows if _is_placeholder(q)]
+    return confirmed, proposed, placeholders
+
+
+@bp.post("/equivalencies/lookup")
+def lookup():
+    ext, error = _external_from_body(request.get_json(silent=True) or {})
+    if error is not None:
+        return error
+    confirmed, proposed, placeholders = _live_rows(ext)
 
     if confirmed:
         return jsonify({"status": "confirmed", "external_course": external_json(ext),
@@ -208,8 +231,47 @@ def lookup():
         return jsonify({"status": "proposed", "external_course": external_json(ext),
                         "equivalency": equivalency_json(proposed[0]), "candidates": candidates})
     candidates = _suggest(ext)
+    # A flagged unknown still reads as unknown, but carries its placeholder row so the UI can show
+    # "waiting on professor review" (pending_reviews) instead of offering to flag it again.
+    placeholder = equivalency_json(placeholders[0]) if placeholders else None
     return jsonify({"status": "proposed" if candidates else "unknown", "external_course": external_json(ext),
-                    "equivalency": None, "candidates": candidates})
+                    "equivalency": placeholder, "candidates": candidates})
+
+
+@bp.post("/equivalencies/lookup/flag")
+@require_write_token
+def flag_lookup():
+    """Flag a course for professor review straight from a lookup, even when it's unknown (KAN-47).
+
+    Body: the lookup fields (school_id, subject, number, title?) plus reviewer (required),
+    requested_by and notes (optional). Attaches the review to the best proposed row; if there is
+    none, creates a placeholder (proposed, kind direct, no course) to hang it on. Never touches a
+    confirmed answer: 409 if the course already has one.
+    """
+    body = request.get_json(silent=True) or {}
+    reviewer = (body.get("reviewer") or "").strip()
+    if not reviewer:
+        return _err("reviewer is required")
+    ext, error = _external_from_body(body)
+    if error is not None:
+        return error
+    confirmed, proposed, placeholders = _live_rows(ext)
+    if confirmed:
+        return _err(f"already confirmed (equivalency {confirmed[0].id}); nothing to review", 409)
+
+    target = (proposed or placeholders or [None])[0]
+    if target is None:
+        target = Equivalency(external_course_id=ext.id, kind="direct", status="proposed", source="registrar",
+                             notes="Unknown at lookup; flagged for professor review")
+        db.session.add(target)
+        db.session.flush()
+    review = EquivalencyReview(equivalency_id=target.id, reviewer=reviewer,
+                               requested_by=(body.get("requested_by") or "registrar").strip(),
+                               notes=(body.get("notes") or "").strip())
+    db.session.add(review)
+    db.session.commit()
+    return jsonify({"external_course": external_json(ext), "equivalency": equivalency_json(target),
+                    "review": review_json(review)}), 201
 
 
 def _apply(q: Equivalency, body: dict):
@@ -252,6 +314,7 @@ def _apply(q: Equivalency, body: dict):
 
 
 @bp.post("/equivalencies")
+@require_write_token
 def create_equivalency():
     body = request.get_json(silent=True) or {}
     ext = db.session.get(ExternalCourse, body.get("external_course_id") or 0)
@@ -267,6 +330,7 @@ def create_equivalency():
 
 
 @bp.put("/equivalencies/<int:equiv_id>")
+@require_write_token
 def update_equivalency(equiv_id: int):
     q = db.session.get(Equivalency, equiv_id)
     if q is None:
@@ -279,6 +343,7 @@ def update_equivalency(equiv_id: int):
 
 
 @bp.post("/equivalencies/<int:equiv_id>/make-primary")
+@require_write_token
 def make_primary(equiv_id: int):
     """Confirm this equivalency and move whatever was confirmed for the same external course back
     to proposed, in one transaction. For external courses approved as more than one Lipscomb
@@ -311,6 +376,7 @@ def _counts_as(q: Equivalency) -> str:
 
 
 @bp.post("/equivalencies/<int:equiv_id>/approve-also")
+@require_write_token
 def approve_also(equiv_id: int):
     """Confirm this equivalency IN ADDITION to what is already confirmed for the same external
     course, so the incoming course counts as both (e.g. a combined lecture+lab course that earns a
@@ -336,6 +402,7 @@ def approve_also(equiv_id: int):
 
 
 @bp.post("/equivalencies/<int:equiv_id>/flag")
+@require_write_token
 def flag(equiv_id: int):
     q = db.session.get(Equivalency, equiv_id)
     if q is None:

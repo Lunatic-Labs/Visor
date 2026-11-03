@@ -180,15 +180,14 @@ def test_make_primary_swaps_the_confirmed_match(client):
 def test_unknown_course_flagged_then_answer_logged_so_nobody_asks_again(client):
     """Unknown -> flag for a professor -> professor says yes -> registrar logs it -> the next
     lookup, by anyone, comes back approved with the note about who decided."""
-    ext = _lookup(client, "Volunteer", "CSCI", "7777", title="Intro to Algorithms").json["external_course"]
-    placeholder = client.post("/api/equivalencies", json={
-        "external_course_id": ext["id"], "kind": "direct", "course_id": None, "status": "proposed",
-        "notes": "No match on file; flagged from Look Up",
-    }).json
-    assert client.post(f"/api/equivalencies/{placeholder['id']}/flag",
-                       json={"reviewer": "Dr. Nordstrom"}).status_code == 201
-    still_open = _lookup(client, "Volunteer", "CSCI", "7777").json
-    assert still_open["status"] == "proposed" and still_open["candidates"] == []
+    flagged = client.post("/api/equivalencies/lookup/flag", json={
+        "school_id": _school_id(client, "Volunteer"), "subject": "CSCI", "number": "7777",
+        "title": "Intro to Algorithms", "reviewer": "Dr. Nordstrom"})
+    assert flagged.status_code == 201
+    placeholder = flagged.json["equivalency"]
+    still_open = _lookup(client, "Volunteer", "CSCI", "7777").json  # KAN-47: still "unknown", with its placeholder
+    assert still_open["status"] == "unknown" and still_open["candidates"] == []
+    assert still_open["equivalency"]["id"] == placeholder["id"]
     assert still_open["equivalency"]["pending_reviews"] == 1
 
     course_id = next(c["id"] for c in client.get("/api/courses?q=2113").json)

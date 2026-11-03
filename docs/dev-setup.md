@@ -79,6 +79,10 @@ flask --app wsgi import-csv path/to/her/csvs
 
 Each row is checked on its own — a bad row (bad number, unknown course, overlapping end/start time, ...) is skipped and printed as `file line N: reason`; every valid row in the same files still loads. Running it twice is safe: an unchanged row is left alone, a changed one (e.g. updated enrollment) is updated, nothing is duplicated.
 
+## Routes that change data need a token on the live site
+
+`main` is public, so every POST/PUT route that writes (create/confirm/flag equivalencies, make-primary, approve-also, adding a school, and the catalog and schedule uploads) checks header `X-Visor-Token` against the `VISOR_WRITE_TOKEN` env var. Locally with `flask run --debug` you don't need it. On Vercel, writes stay off until someone sets `VISOR_WRITE_TOKEN` in the project's env vars; then send it with `curl -H "X-Visor-Token: ..."`. Never commit the token. The web app doesn't send the token yet, so its buttons that save something only work locally for now.
+
 ## Tests and lint
 
 ```

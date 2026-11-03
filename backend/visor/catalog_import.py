@@ -15,10 +15,12 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
+from .auth import write_guard
 from .schedule_import import RemovalTooLarge, load_schedule
 from .seed import load
 
 bp = Blueprint("catalog_import", __name__, url_prefix="/api")
+bp.before_request(write_guard)  # every route here writes (KAN-46)
 
 FILES = ("terms", "courses", "prereqs", "sections")
 
