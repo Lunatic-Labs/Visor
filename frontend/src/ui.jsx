@@ -20,6 +20,12 @@ export function timeAgo(iso) {
 
 export const isStale = (iso) => Date.now() - new Date(iso).getTime() > 24 * 3600 * 1000
 
+// "ENG 100", "ENG100", "eng-100" -> ["ENG", "100"]; same split the SIS importer uses.
+export function splitCode(code) {
+  const m = code.trim().toUpperCase().replace(/\s+/g, ' ').match(/^([A-Z]+)[\s-]*(.+)$/)
+  return m ? [m[1], m[2].trim()] : null
+}
+
 const courseLabel = (c) => `${c.code} — ${c.title}`
 
 // Render once per screen; every CoursePicker on it reads from this list.

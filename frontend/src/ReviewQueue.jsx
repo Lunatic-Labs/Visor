@@ -67,14 +67,18 @@ export default function ReviewQueue({ actor, onChange }) {
     const byExt = new Map()
     for (const q of rows || []) {
       const id = q.external_course.id
-      if (!byExt.has(id)) byExt.set(id, { ext: q.external_course, current: null, alternates: [] })
+      if (!byExt.has(id)) byExt.set(id, { ext: q.external_course, confirmed: [], alternates: [] })
       const g = byExt.get(id)
-      if (q.status === 'confirmed') g.current = q
+      if (q.status === 'confirmed') g.confirmed.push(q)
       else if (q.status === 'proposed') g.alternates.push(q)
     }
     return [...byExt.values()]
       .filter((g) => g.alternates.length)
-      .map((g) => ({ ...g, alternates: g.alternates.sort((a, b) => (b.confidence || 0) - (a.confidence || 0)) }))
+      .map((g) => ({
+        ...g,
+        confirmed: g.confirmed.sort((a, b) => a.id - b.id),
+        alternates: g.alternates.sort((a, b) => (b.confidence || 0) - (a.confidence || 0)),
+      }))
       .sort((a, b) => a.ext.school.localeCompare(b.ext.school) || a.ext.subject.localeCompare(b.ext.subject)
         || a.ext.number.localeCompare(b.ext.number))
   }, [rows])
@@ -112,6 +116,10 @@ export default function ReviewQueue({ actor, onChange }) {
     () => api(`/api/equivalencies/${q.id}/make-primary`, { method: 'POST', body: { decided_by: actor.trim() } }),
     `${lipscombLabel(q)} is now the approved match.`)
 
+  const approveBoth = (q, g) => !needName() && run(
+    () => api(`/api/equivalencies/${q.id}/approve-also`, { method: 'POST', body: { decided_by: actor.trim() } }),
+    `${g.ext.subject} ${g.ext.number} now counts as ${[...g.confirmed, q].map(lipscombLabel).join(' and ')}.`)
+
   const dismiss = (q) => !needName() && run(
     () => api(`/api/equivalencies/${q.id}`, { method: 'PUT', body: { status: 'rejected', decided_by: actor.trim() } }),
     `Dismissed ${lipscombLabel(q)}.`)
@@ -133,7 +141,8 @@ export default function ReviewQueue({ actor, onChange }) {
     <>
       <PageHead title="Review queue">
         Courses with more than one possible Lipscomb equivalent, or a suggested match nobody has approved yet.
-        Pick the right one, dismiss the wrong ones, or ask a professor.
+        Pick the right one, approve both if the course counts for two (like a combined lecture and lab), dismiss
+        the wrong ones, or ask a professor.
       </PageHead>
 
       <div className="filters">
@@ -169,17 +178,20 @@ export default function ReviewQueue({ actor, onChange }) {
           </div>
 
           <div className="current">
-            {g.current
-              ? <>Currently counts as <strong>{lipscombLabel(g.current)}</strong> <StatusBadge status="confirmed" kind={g.current.kind} /></>
+            {g.confirmed.length
+              ? <>Currently counts as {g.confirmed.map((c, i) => (
+                <span key={c.id}>{i > 0 && ' and '}<strong>{lipscombLabel(c)}</strong></span>
+              ))} <StatusBadge status="confirmed" kind={g.confirmed[0].kind} /></>
               : <span className="muted">No approved match yet.</span>}
           </div>
 
           {g.alternates.map((q) => {
             const open = q.kind === 'direct' && !q.course
+            const has = g.confirmed.length > 0
             return (
             <div className="alt-row" key={q.id}>
               <div className="alt-main">
-                <div>{open ? 'Needs an answer' : g.current ? 'Also approved as ' : 'Suggested: '}
+                <div>{open ? 'Needs an answer' : has ? 'Also approved as ' : 'Suggested: '}
                   {!open && <strong>{lipscombLabel(q)}</strong>}
                   {q.pending_reviews > 0 && <span className="badge badge-elective">flagged for a professor</span>}
                 </div>
@@ -188,8 +200,15 @@ export default function ReviewQueue({ actor, onChange }) {
               </div>
               <div className="row-actions">
                 {!open && (
-                  <button type="button" className="btn-primary" disabled={busy} onClick={() => approve(q)}>
-                    {g.current ? 'Use this instead' : 'Approve'}
+                  <button type="button" className="btn-primary" disabled={busy} onClick={() => approve(q)}
+                          title={has ? 'This replaces what it counts as now' : undefined}>
+                    {has ? 'Use this instead' : 'Approve'}
+                  </button>
+                )}
+                {!open && has && (
+                  <button type="button" className="btn-primary" disabled={busy} onClick={() => approveBoth(q, g)}
+                          title="Keep what it counts as now, and count it as this too">
+                    {g.confirmed.length === 1 ? 'Approve for both' : 'Approve as well'}
                   </button>
                 )}
                 <button type="button" className="btn-danger" disabled={busy} onClick={() => dismiss(q)}>Dismiss</button>

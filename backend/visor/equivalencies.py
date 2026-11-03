@@ -5,6 +5,7 @@ equivalency to confirmed on its own; only a POST/PUT with a person's name in dec
 """
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timezone
 
 from flask import Blueprint, jsonify, request
@@ -13,6 +14,7 @@ from sqlalchemy.orm import selectinload
 
 from .models import (EQUIV_KINDS, EQUIV_SOURCES, EQUIV_STATUSES, Course, Equivalency, EquivalencyReview,
                      ExternalCourse, School, db)
+from .sis_import import school_kind
 
 bp = Blueprint("equivalencies", __name__, url_prefix="/api")
 
@@ -66,6 +68,31 @@ def review_json(r: EquivalencyReview) -> dict:
 def schools():
     rows = School.query.filter_by(active=True).order_by(School.name).all()
     return jsonify([school_json(s) for s in rows])
+
+
+@bp.post("/schools")
+def create_school():
+    """Add a school students transfer from. If one with the same name (ignoring case) exists, it is
+    returned instead (200), so the same school is never added twice under one spelling."""
+    body = request.get_json(silent=True) or {}
+    name = re.sub(r"\s+", " ", str(body.get("name") or "")).strip()
+    if not name:
+        return _err("name is required")
+    if len(name) > 120:
+        return _err("name is longer than 120 characters")
+    state = str(body.get("state") or "").strip().upper() or None
+    if state and not re.fullmatch(r"[A-Z]{2}", state):
+        return _err("state must be a 2-letter code, like TN")
+    existing = School.query.filter(func.lower(School.name) == name.lower()).first()
+    if existing is not None:
+        if not existing.active:
+            existing.active = True
+            db.session.commit()
+        return jsonify(school_json(existing)), 200
+    school = School(name=name, state=state, kind=school_kind(name))
+    db.session.add(school)
+    db.session.commit()
+    return jsonify(school_json(school)), 201
 
 
 @bp.get("/schools/<int:school_id>/courses")
@@ -145,25 +172,34 @@ def lookup():
         return _err("unknown school", 404)
     subject, number = str(subject).strip().upper(), str(number).strip()
     title = (body.get("title") or "").strip()
+    credits = body.get("credits")
+    if credits in ("", None):
+        credits = None
+    elif not (isinstance(credits, int) or (isinstance(credits, str) and credits.strip().isdigit())) \
+            or not 0 <= int(credits) <= 30:
+        return _err("credits must be a whole number of hours")
+    else:
+        credits = int(credits)
 
     ext = (ExternalCourse.query.filter_by(school_id=school.id, subject=subject, number=number)
            .order_by(ExternalCourse.catalog_year.desc()).first())
     if ext is None:
         # Record it so it can be flagged for review; we never invent a mapping for it.
-        ext = ExternalCourse(school_id=school.id, subject=subject, number=number,
-                             title=title or f"{subject} {number}", catalog_year=str(date.today().year))
+        ext = ExternalCourse(school_id=school.id, subject=subject, number=number, credits=credits,
+                             title=(title or f"{subject} {number}")[:160], catalog_year=str(date.today().year))
         db.session.add(ext)
         db.session.commit()
 
     rows = Equivalency.query.filter(Equivalency.external_course_id == ext.id,
                                     Equivalency.status.in_(("confirmed", "proposed"))).all()
-    confirmed = [q for q in rows if q.status == "confirmed"]
+    confirmed = sorted((q for q in rows if q.status == "confirmed"), key=lambda q: q.id)
     proposed = sorted((q for q in rows if q.status == "proposed"),
                       key=lambda q: q.confidence or 0, reverse=True)
 
     if confirmed:
         return jsonify({"status": "confirmed", "external_course": external_json(ext),
                         "equivalency": equivalency_json(confirmed[0]), "candidates": [],
+                        "also_counts_as": [equivalency_json(q) for q in confirmed[1:]],
                         "alternates": [equivalency_json(q) for q in proposed]})
     if proposed:
         candidates = [{"id": q.id, "course": course_json(q.course), "score": q.confidence,
@@ -178,6 +214,7 @@ def lookup():
 
 def _apply(q: Equivalency, body: dict):
     """Validate and copy writable fields onto q. Returns an error response or None."""
+    was_confirmed = q.status == "confirmed"
     if "course_id" in body:
         cid = body["course_id"]
         if cid is not None and db.session.get(Course, cid) is None:
@@ -202,12 +239,15 @@ def _apply(q: Equivalency, body: dict):
         if not q.decided_by:
             return _err(f"{q.status} needs decided_by (the person who decided)")
         q.decided_at = q.decided_at or datetime.now(timezone.utc)
-    if q.status == "confirmed":
+    # A second approved match only through make-primary (instead) or approve-also (both), never by
+    # accident. A row that is already approved can still be edited while another one is approved too.
+    if q.status == "confirmed" and not was_confirmed:
         clash = Equivalency.query.filter(Equivalency.external_course_id == q.external_course_id,
                                          Equivalency.status == "confirmed",
                                          Equivalency.id != q.id).first()
         if clash:
-            return _err(f"external course already has a confirmed equivalency (id {clash.id})", 409)
+            return _err(f"external course already has a confirmed equivalency (id {clash.id}); "
+                        "use make-primary to replace it or approve-also to count for both", 409)
     return None
 
 
@@ -257,6 +297,39 @@ def make_primary(equiv_id: int):
         old.status = "proposed"
         note = f"Replaced as the primary match by {decided_by} on {now.date().isoformat()}"
         old.notes = f"{old.notes}; {note}" if old.notes else note
+    q.status, q.decided_by, q.decided_at = "confirmed", decided_by, now
+    db.session.commit()
+    return jsonify(equivalency_json(q, embed_external=True))
+
+
+def _counts_as(q: Equivalency) -> str:
+    if q.kind == "elective":
+        return "general elective credit"
+    if q.kind == "none":
+        return "no credit"
+    return q.course.code if q.course else "an unpicked course"
+
+
+@bp.post("/equivalencies/<int:equiv_id>/approve-also")
+def approve_also(equiv_id: int):
+    """Confirm this equivalency IN ADDITION to what is already confirmed for the same external
+    course, so the incoming course counts as both (e.g. a combined lecture+lab course that earns a
+    Lipscomb lecture and its lab). Unlike make-primary, nothing else is demoted."""
+    q = db.session.get(Equivalency, equiv_id)
+    if q is None:
+        return _err("unknown equivalency", 404)
+    decided_by = ((request.get_json(silent=True) or {}).get("decided_by") or "").strip()
+    if not decided_by:
+        return _err("decided_by is required (the person approving it)")
+    if q.kind == "direct" and q.course_id is None:
+        return _err("a confirmed direct equivalency needs a course_id")
+    now = datetime.now(timezone.utc)
+    others = Equivalency.query.filter(Equivalency.external_course_id == q.external_course_id,
+                                      Equivalency.status == "confirmed", Equivalency.id != q.id).all()
+    if others:
+        note = (f"Approved to count alongside {', '.join(_counts_as(o) for o in others)} "
+                f"by {decided_by} on {now.date().isoformat()}")
+        q.notes = f"{q.notes}; {note}" if q.notes else note
     q.status, q.decided_by, q.decided_at = "confirmed", decided_by, now
     db.session.commit()
     return jsonify(equivalency_json(q, embed_external=True))

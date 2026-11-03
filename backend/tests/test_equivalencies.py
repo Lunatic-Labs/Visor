@@ -262,3 +262,110 @@ def test_create_validates_enums_and_course(client):
 def test_existing_endpoints_still_work(client):
     assert client.get("/api/health").json == {"status": "ok"}
     assert len(client.get("/api/terms").json) == 2
+
+
+# --- approve for both -----------------------------------------------------------------------------
+
+def _add_alternate(client, school, subject, number):
+    """A proposed second match for a course that already has a confirmed one."""
+    before = _lookup(client, school, subject, number).json
+    current = before["equivalency"]
+    other = next(c for c in client.get("/api/courses").json if c["id"] != current["course"]["id"])
+    alt = client.post("/api/equivalencies", json={
+        "external_course_id": before["external_course"]["id"], "course_id": other["id"], "status": "proposed",
+    }).json
+    return current, alt, other
+
+
+def test_approve_also_counts_the_course_as_both(client):
+    current, alt, other = _add_alternate(client, "Nashville", "CISP", "1010")
+    assert client.post(f"/api/equivalencies/{alt['id']}/approve-also", json={}).status_code == 400
+    r = client.post(f"/api/equivalencies/{alt['id']}/approve-also", json={"decided_by": "Ms. Hood"})
+    assert r.status_code == 200 and r.json["status"] == "confirmed" and r.json["decided_by"] == "Ms. Hood"
+    assert "Approved to count alongside" in r.json["notes"]
+
+    body = _lookup(client, "Nashville", "CISP", "1010").json
+    assert body["status"] == "confirmed"
+    assert body["equivalency"]["id"] == current["id"]  # the first approval stays first
+    assert [q["course"]["code"] for q in body["also_counts_as"]] == [other["code"]]
+    assert body["alternates"] == []
+
+
+def test_also_counts_as_is_empty_for_a_single_match(client):
+    assert _lookup(client, "Nashville", "CISP", "1010").json["also_counts_as"] == []
+
+
+def test_an_approved_row_can_still_be_edited_when_another_is_approved_too(client):
+    current, alt, _ = _add_alternate(client, "Nashville", "CISP", "1010")
+    client.post(f"/api/equivalencies/{alt['id']}/approve-also", json={"decided_by": "Ms. Hood"})
+    r = client.put(f"/api/equivalencies/{current['id']}", json={"notes": "checked again"})
+    assert r.status_code == 200 and r.json["status"] == "confirmed"
+
+
+def test_a_second_approval_by_accident_is_still_blocked(client):
+    _, alt, _ = _add_alternate(client, "Nashville", "CISP", "1010")
+    r = client.put(f"/api/equivalencies/{alt['id']}", json={"status": "confirmed", "decided_by": "Ms. Hood"})
+    assert r.status_code == 409 and "approve-also" in r.json["error"]
+
+
+def test_use_instead_after_both_leaves_only_the_chosen_one(client):
+    current, alt, other = _add_alternate(client, "Nashville", "CISP", "1010")
+    client.post(f"/api/equivalencies/{alt['id']}/approve-also", json={"decided_by": "Ms. Hood"})
+    client.post(f"/api/equivalencies/{current['id']}/make-primary", json={"decided_by": "Ms. Hood"})
+    body = _lookup(client, "Nashville", "CISP", "1010").json
+    assert body["equivalency"]["id"] == current["id"] and body["also_counts_as"] == []
+    assert [q["id"] for q in body["alternates"]] == [alt["id"]]
+
+
+def test_summary_counts_both_approvals(client):
+    before = client.get("/api/equivalencies/summary").json
+    _, alt, _ = _add_alternate(client, "Nashville", "CISP", "1010")
+    client.post(f"/api/equivalencies/{alt['id']}/approve-also", json={"decided_by": "Ms. Hood"})
+    after = client.get("/api/equivalencies/summary").json
+    assert after["confirmed"] == before["confirmed"] + 1 and after["proposed"] == before["proposed"]
+
+
+# --- adding a school and course by hand ------------------------------------------------------------
+
+def test_create_school_and_it_appears_in_the_list(client):
+    r = client.post("/api/schools", json={"name": "  University of   Tennessee, Knoxville ", "state": "tn"})
+    assert r.status_code == 201
+    assert r.json["name"] == "University of Tennessee, Knoxville" and r.json["state"] == "TN"
+    assert r.json["kind"] == "university"
+    assert any(s["id"] == r.json["id"] for s in client.get("/api/schools").json)
+
+
+def test_create_school_is_idempotent_ignoring_case(client):
+    first = client.post("/api/schools", json={"name": "Example Community College"})
+    again = client.post("/api/schools", json={"name": "example community college"})
+    assert first.status_code == 201 and again.status_code == 200 and again.json["id"] == first.json["id"]
+    assert first.json["kind"] == "community_college"
+
+
+def test_create_school_validation(client):
+    assert client.post("/api/schools", json={}).status_code == 400
+    assert client.post("/api/schools", json={"name": "x" * 121}).status_code == 400
+    assert client.post("/api/schools", json={"name": "Somewhere", "state": "Tennessee"}).status_code == 400
+
+
+def test_add_a_course_at_a_new_school_by_hand(client):
+    """What the Library's 'Add equivalency' form does, end to end."""
+    school = client.post("/api/schools", json={"name": "Example State University", "state": "TN"}).json
+    looked = client.post("/api/equivalencies/lookup", json={
+        "school_id": school["id"], "subject": "math", "number": "1910", "title": "Calculus I", "credits": "4"}).json
+    assert looked["status"] == "unknown"
+    assert looked["external_course"]["title"] == "Calculus I" and looked["external_course"]["credits"] == 4
+    course_id = next(c["id"] for c in client.get("/api/courses?q=1314").json)
+    r = client.post("/api/equivalencies", json={
+        "external_course_id": looked["external_course"]["id"], "kind": "direct", "course_id": course_id,
+        "status": "confirmed", "decided_by": "Ms. Hood", "notes": "Math dept approved by email"})
+    assert r.status_code == 201
+    later = client.post("/api/equivalencies/lookup",
+                        json={"school_id": school["id"], "subject": "MATH", "number": "1910"}).json
+    assert later["status"] == "confirmed" and later["equivalency"]["course"]["code"] == "MA 1314"
+
+
+def test_lookup_rejects_bad_credits(client):
+    sid = _school_id(client, "Nashville")
+    r = client.post("/api/equivalencies/lookup", json={"school_id": sid, "subject": "X", "number": "1", "credits": "four"})
+    assert r.status_code == 400

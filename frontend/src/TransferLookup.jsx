@@ -1,12 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from './api.js'
-import { CourseList, CoursePicker, PageHead, StatusBadge, lipscombLabel } from './ui.jsx'
-
-// "ENG 100", "ENG100", "eng-100" -> ["ENG", "100"]; same split the SIS importer uses.
-function splitCode(code) {
-  const m = code.trim().toUpperCase().replace(/\s+/g, ' ').match(/^([A-Z]+)[\s-]*(.+)$/)
-  return m ? [m[1], m[2].trim()] : null
-}
+import { CourseList, CoursePicker, PageHead, StatusBadge, lipscombLabel, splitCode } from './ui.jsx'
 
 // Look up what a transfer course counts as, and act on the answer. Nothing confirms itself:
 // every approve/reject is saved under the name entered in the top bar.
@@ -82,6 +76,10 @@ export default function TransferLookup({ actor, onChange }) {
   const approve = (q) => !needName() && act(
     () => api(`/api/equivalencies/${q.id}/make-primary`, { method: 'POST', body: { decided_by: actor.trim() } }),
     'Approved.')
+
+  const approveBoth = (q) => !needName() && act(
+    () => api(`/api/equivalencies/${q.id}/approve-also`, { method: 'POST', body: { decided_by: actor.trim() } }),
+    `Approved. It now counts as both.`)
 
   const reject = (q) => !needName() && act(
     () => api(`/api/equivalencies/${q.id}`, { method: 'PUT', body: { status: 'rejected', decided_by: actor.trim() } }),
@@ -185,6 +183,21 @@ export default function TransferLookup({ actor, onChange }) {
                 {eq.notes && <div className="note">{eq.notes}</div>}
               </div>
 
+              {result.also_counts_as?.map((q) => (
+                <div className="answer also" key={q.id}>
+                  <span className="muted small">and also counts as</span>
+                  <div className="answer-main">
+                    {q.kind === 'direct' && q.course
+                      ? <><span className="code">{q.course.code}</span> {q.course.title} · {q.course.credits} hrs</>
+                      : lipscombLabel(q)}
+                  </div>
+                  <div className="muted small">
+                    Approved by {q.decided_by || 'unknown'}{q.decided_at ? ` on ${q.decided_at}` : ''}
+                  </div>
+                  {q.notes && <div className="note">{q.notes}</div>}
+                </div>
+              ))}
+
               {result.alternates?.length > 0 && (
                 <div className="alternates">
                   <p><strong>Also approved as</strong> <span className="muted small">(the SIS has more than one approval for this course)</span></p>
@@ -196,6 +209,9 @@ export default function TransferLookup({ actor, onChange }) {
                       </div>
                       <div className="row-actions">
                         <button type="button" className="btn-ghost" disabled={busy} onClick={() => approve(q)}>Use this instead</button>
+                        <button type="button" className="btn-ghost" disabled={busy} onClick={() => approveBoth(q)}>
+                          Approve for both
+                        </button>
                       </div>
                     </div>
                   ))}

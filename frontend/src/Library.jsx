@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { api } from './api.js'
 import { PageHead, StatusBadge, lipscombLabel, statusKey } from './ui.jsx'
+import AddEquivalency from './AddEquivalency.jsx'
 
 const PAGE = 25
 const FILTERS = [
@@ -35,7 +36,7 @@ function downloadCsv(rows) {
   URL.revokeObjectURL(a.href)
 }
 
-export default function Library() {
+export default function Library({ actor = '', onChange }) {
   const [rows, setRows] = useState(null)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
@@ -43,8 +44,18 @@ export default function Library() {
   const [filter, setFilter] = useState('all')
   const [page, setPage] = useState(0)
   const [open, setOpen] = useState(null)
+  const [adding, setAdding] = useState(false)
+  const [message, setMessage] = useState('')
 
-  useEffect(() => { api('/api/equivalencies').then(setRows).catch((e) => setError(e.message)) }, [])
+  const load = () => api('/api/equivalencies').then(setRows).catch((e) => setError(e.message))
+  useEffect(() => { load() }, [])
+
+  function saved(text) {
+    setAdding(false)
+    setMessage(text)
+    load()
+    onChange?.()
+  }
 
   const schools = useMemo(() => [...new Set((rows || []).map((q) => q.external_course.school))].sort(), [rows])
 
@@ -68,12 +79,19 @@ export default function Library() {
     <>
       <PageHead
         title="Equivalency library"
-        actions={<button type="button" className="btn-ghost" disabled={!filtered.length} onClick={() => downloadCsv(filtered)}>
-          Download spreadsheet ({filtered.length.toLocaleString()})
-        </button>}
+        actions={<>
+          <button type="button" className="btn-primary" disabled={adding}
+                  onClick={() => { setAdding(true); setMessage('') }}>+ Add equivalency</button>
+          <button type="button" className="btn-ghost" disabled={!filtered.length} onClick={() => downloadCsv(filtered)}>
+            Download spreadsheet ({filtered.length.toLocaleString()})
+          </button>
+        </>}
       >
         Every incoming course on file and what it counts as at Lipscomb. Click a row for details.
       </PageHead>
+
+      {message && <p className="success banner">{message}</p>}
+      {adding && <AddEquivalency actor={actor} onSaved={saved} onCancel={() => setAdding(false)} />}
 
       <section className="card">
         <div className="filters">
