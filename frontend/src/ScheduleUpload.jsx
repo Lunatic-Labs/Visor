@@ -99,7 +99,7 @@ export default function ScheduleUpload() {
           <h2>
             {result.dry_run ? 'Checked, nothing saved. This is what would change' : 'Schedule updated'}
             <span className={`badge badge-${result.ok ? 'confirmed' : 'proposed'}`}>
-              {result.ok ? 'no problems' : `${result.issues.length} to look at`}
+              {result.ok ? 'no file problems' : `${result.issues.length} file note${result.issues.length === 1 ? '' : 's'}`}
             </span>
           </h2>
           <p>{result.counts.sections_in_file.toLocaleString()} sections in the file.</p>
@@ -119,7 +119,15 @@ export default function ScheduleUpload() {
           )}
           {result.issues.length > 0 && (
             <details>
-              <summary>{result.issues.length} row{result.issues.length === 1 ? '' : 's'} need a look</summary>
+              <summary>
+                {result.issues.length} row{result.issues.length === 1 ? '' : 's'} in the university's file Visor
+                couldn't fully use
+              </summary>
+              <p className="muted small">
+                These are problems in the export itself, not changes waiting to be made. Visor imported everything
+                else. They'll be listed every time this file is checked or uploaded, until the university's
+                schedule data is corrected; uploading again won't clear them.
+              </p>
               <ul className="conflicts">
                 {result.issues.map((i, n) => <li key={n}>{i}</li>)}
               </ul>
