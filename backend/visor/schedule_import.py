@@ -221,16 +221,20 @@ class ScheduleResult:
         return summary + (f"\n{len(self.issues)} note(s):\n" + "\n".join(self.issues) if self.issues else "")
 
 
-def load_schedule(path: str | Path, dry_run: bool = False) -> ScheduleResult:
+def load_schedule(path: str | Path, dry_run: bool = False, filename: str | None = None) -> ScheduleResult:
     """Load the schedule export into the database. Needs an app context.
 
     Idempotent: a section already there is updated only if its seats changed, and meeting times
     are only ever added. With dry_run=True, reports what would happen and saves nothing.
+    Every real run is logged per term (ScheduleImport) so the Schedule screen can show when the
+    seat counts were last refreshed, even if nothing changed. filename is what to record for it
+    (an upload's original name; defaults to the file's own name).
     """
-    from .models import Course, MeetingTime, Section, Term, db
+    from .models import Course, MeetingTime, ScheduleImport, Section, Term, db
 
     plan = parse_schedule(read_schedule(path))
-    counts = {"terms_added": 0, "courses_added": 0, "courses_already_there": 0, "existing_courses_differ": 0,
+    counts = {"sections_in_file": len(plan.sections),
+              "terms_added": 0, "courses_added": 0, "courses_already_there": 0, "existing_courses_differ": 0,
               "sections_added": 0, "sections_updated": 0, "meetings_added": 0,
               "sections_without_meetings": 0, "sections_skipped": plan.skipped_sections}
 
@@ -277,5 +281,8 @@ def load_schedule(path: str | Path, dry_run: bool = False) -> ScheduleResult:
     if dry_run:
         db.session.rollback()
     else:
+        for code in plan.terms:
+            db.session.add(ScheduleImport(term_id=terms[code].id, filename=(filename or Path(path).name)[:200],
+                                          sections=sum(ps.term_code == code for ps in plan.sections)))
         db.session.commit()
     return ScheduleResult(counts, plan.issues)

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from './api.js'
-import { PageHead } from './ui.jsx'
+import { PageHead, formatWhen, isStale, timeAgo } from './ui.jsx'
 
 const PAGE = 40
 const meets = (s) => (s.meetings.length
@@ -9,7 +9,7 @@ const meets = (s) => (s.meetings.length
 
 // Search a term's sections, add the ones a student is considering, and check just those for time
 // conflicts. (Comparing every section in the university against every other would flag nearly all.)
-export default function Schedule() {
+export default function Schedule({ navigate }) {
   const [terms, setTerms] = useState([])
   const [term, setTerm] = useState('')
   const [sections, setSections] = useState([])
@@ -37,6 +37,8 @@ export default function Schedule() {
       .then(setConflicts).catch((e) => setError(e.message))
   }, [picked, term])
 
+  const current = terms.find((t) => t.code === term) || {}
+  const updatedAt = current.schedule_updated_at
   const byLabel = useMemo(() => new Map(sections.map((s) => [s.label, s])), [sections])
   const inConflict = useMemo(() => new Set(conflicts.flatMap((c) => [c.a, c.b])), [conflicts])
 
@@ -66,6 +68,18 @@ export default function Schedule() {
       </PageHead>
 
       {error && <p className="error">{error}</p>}
+
+      {term && (
+        <div className={`updated-note${updatedAt && isStale(updatedAt) ? ' stale' : ''}`}>
+          <span>
+            {updatedAt
+              ? <>Seats and sections last updated <strong>{formatWhen(updatedAt)}</strong> ({timeAgo(updatedAt)})
+                {current.schedule_file && <span className="muted"> from {current.schedule_file}</span>}</>
+              : "Seats and sections haven't been updated from a schedule file yet."}
+          </span>
+          {navigate && <button type="button" className="btn-ghost" onClick={() => navigate('import')}>Update now</button>}
+        </div>
+      )}
 
       <section className="card">
         <h2>Student's schedule ({picked.length})</h2>

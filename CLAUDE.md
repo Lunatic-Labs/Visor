@@ -63,7 +63,7 @@ cd frontend && npm install && npm run dev        # http://localhost:5173, /api p
 | `backend/visor/rules/` | Pure rules engine (conflicts, prereqs; equivalency matching coming) |
 | `backend/visor/models.py`, `seed.py` | SQLAlchemy models, CSV loaders |
 | `backend/visor/sis_import.py` | Importer for the registrar's SIS equivalency export (`flask import-sis`) |
-| `backend/visor/schedule_import.py` | Importer for the public class-schedule CSV export (`flask import-schedule`): courses, sections, meetings |
+| `backend/visor/schedule_import.py` | Importer for the public class-schedule CSV export (`flask import-schedule`, or the Import tab via `POST /api/import/schedule`): courses, sections, meetings, and a "last updated" log |
 | `data/sample/`, `data/equivalencies/` | Fake seed data; `data/equivalencies/README.md` lists the demo lookups |
 | `frontend/src/` | React app |
 | `api/index.py`, `vercel.json` | Vercel deploy layer (Flask as one serverless function) |

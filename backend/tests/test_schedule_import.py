@@ -187,3 +187,82 @@ def test_cli_import_schedule(app, tmp_path):
     real = runner.invoke(args=["import-schedule", str(path)])
     assert real.exit_code == 0 and "longer than 4 characters" in real.output
     assert Course.query.filter_by(subject="DEMO").count() == 1
+
+
+# --- upload endpoint and "last updated" ------------------------------------------------------
+
+def upload(client, path, query="", name=None):
+    import io
+    return client.post(f"/api/import/schedule{query}",
+                       data={"schedule": (io.BytesIO(path.read_bytes()), name or path.name)},
+                       content_type="multipart/form-data")
+
+
+def term(client, code="2027SP"):
+    return next(t for t in client.get("/api/terms").json if t["code"] == code)
+
+
+def test_terms_have_no_update_time_until_a_schedule_is_loaded(client):
+    assert term(client)["schedule_updated_at"] is None and term(client)["schedule_file"] is None
+
+
+def test_upload_loads_the_schedule_and_stamps_the_time(app, client, tmp_path):
+    path = write(tmp_path, row(sec="01"), row(sec="02", days="TuesThurs"), JUNK, name="Spring 2027.csv")
+    r = upload(client, path)
+    assert r.status_code == 200 and r.json["ok"] is True and r.json["dry_run"] is False
+    assert r.json["counts"]["sections_in_file"] == 2 and r.json["counts"]["sections_added"] == 2
+    t = term(client)
+    assert t["schedule_file"] == "Spring 2027.csv"
+    assert t["schedule_updated_at"].endswith("Z")
+
+
+def test_reupload_refreshes_seats_and_moves_the_time_forward(app, client, tmp_path):
+    from visor.models import ScheduleImport
+    upload(client, write(tmp_path, row(seats="24", filled="0"), name="first.csv"))
+    first = term(client)["schedule_updated_at"]
+    r = upload(client, write(tmp_path, row(seats="24", filled="9"), name="second.csv"))
+    assert r.json["counts"]["sections_updated"] == 1 and r.json["counts"]["sections_added"] == 0
+    sec = Section.query.join(Course).filter(Course.number == "1013").one()
+    assert sec.enrolled_count == 9
+    assert term(client)["schedule_file"] == "second.csv" and term(client)["schedule_updated_at"] >= first
+    assert ScheduleImport.query.count() == 2
+
+
+def test_a_reupload_with_no_changes_still_counts_as_updated(app, client, tmp_path):
+    from visor.models import ScheduleImport
+    path = write(tmp_path, row())
+    upload(client, path)
+    r = upload(client, path)
+    assert r.json["counts"]["sections_updated"] == 0 and ScheduleImport.query.count() == 2
+
+
+def test_dry_run_upload_saves_nothing_and_does_not_stamp(app, client, tmp_path):
+    r = upload(client, write(tmp_path, row(), row(term="2031 Fall Full Term")), "?dry_run=1")
+    assert r.status_code == 200 and r.json["dry_run"] is True and r.json["counts"]["sections_added"] == 2
+    assert Course.query.filter_by(subject="DEMO").count() == 0
+    assert term(client)["schedule_updated_at"] is None
+
+
+def test_upload_reports_problem_rows(app, client, tmp_path):
+    r = upload(client, write(tmp_path, row(), row(sec="LO1.1")))
+    assert r.status_code == 200 and r.json["ok"] is False
+    assert r.json["counts"]["sections_skipped"] == 1 and "longer than 4" in r.json["issues"][0]
+
+
+def test_upload_rejects_the_wrong_file_without_changing_anything(app, client, tmp_path):
+    from visor.models import ScheduleImport
+    wrong = tmp_path / "courses.csv"
+    wrong.write_text("subject,number,title,credits\nCS,4999,Capstone,3\n")
+    r = upload(client, wrong)
+    assert r.status_code == 400 and "isn't the class schedule" in r.json["error"]
+    assert upload(client, write(tmp_path, JUNK, name="empty.csv")).status_code == 400
+    binary = tmp_path / "x.csv"
+    binary.write_bytes(b"\xff\xfe\x00\x00 not text")
+    assert upload(client, binary).status_code == 400
+    assert client.post("/api/import/schedule", data={}, content_type="multipart/form-data").status_code == 400
+    assert ScheduleImport.query.count() == 0
+
+
+def test_cli_import_also_stamps_the_time(app, client, tmp_path):
+    app.test_cli_runner().invoke(args=["import-schedule", str(write(tmp_path, row(), name="cli.csv"))])
+    assert term(client)["schedule_file"] == "cli.csv"

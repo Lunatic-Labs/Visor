@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from datetime import timezone
 from pathlib import Path
 
 import click
@@ -11,7 +12,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.pool import NullPool
 
 from . import rules
-from .models import Course, PrereqGroup, Section, Term, db
+from .models import Course, PrereqGroup, ScheduleImport, Section, Term, db
 
 DEFAULT_DATA = Path(__file__).resolve().parents[2] / "data" / "sample"
 DEFAULT_EQUIV_DATA = Path(__file__).resolve().parents[2] / "data" / "equivalencies"
@@ -128,7 +129,20 @@ def create_app(config: dict | None = None) -> Flask:
 
     @app.get("/api/terms")
     def terms():
-        return jsonify([{"code": t.code, "name": t.name} for t in Term.query.order_by(Term.code)])
+        """schedule_updated_at / schedule_file: when the class schedule was last loaded for the term
+        (null if never). UTC, with a Z, so the browser can show it in the viewer's own timezone."""
+        latest: dict[int, ScheduleImport] = {}
+        for si in ScheduleImport.query.order_by(ScheduleImport.imported_at.desc(), ScheduleImport.id.desc()):
+            latest.setdefault(si.term_id, si)
+
+        def stamp(term):
+            si = latest.get(term.id)
+            if si is None:
+                return {"schedule_updated_at": None, "schedule_file": None}
+            at = si.imported_at if si.imported_at.tzinfo else si.imported_at.replace(tzinfo=timezone.utc)
+            return {"schedule_updated_at": at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    "schedule_file": si.filename}
+        return jsonify([{"code": t.code, "name": t.name, **stamp(t)} for t in Term.query.order_by(Term.code)])
 
     def _term_sections(code: str) -> list[Section]:
         term = Term.query.filter_by(code=code).first() or abort(404, "unknown term")

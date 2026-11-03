@@ -59,6 +59,8 @@ flask --app wsgi import-schedule --dry-run "../data/private/2027 Spring Semester
 flask --app wsgi import-schedule "../data/private/2027 Spring Semester Class Schedule  Lipscomb University.csv"
 ```
 
+The registrar does the same without a terminal: Import tab > Class schedule > choose the CSV > Upload (it has a "check only" box too). Either way, the load time is recorded and shown on the Schedule tab as "last updated", turning amber after a day.
+
 One row per section becomes a course (if new), a section, and its meeting times. Running it twice is safe, and courses already in the database (e.g. from the SIS import) are never overwritten. Rows it can't use fully (a section code over 4 characters, meetings listed as calendar dates, an end time before the start) are listed at the end. It reads only this export's format, not the four-file format below. The export has no prerequisites. Details: `backend/visor/schedule_import.py`.
 
 To see only real data locally, import the SIS file and the schedule into a fresh database and skip `flask seed`.

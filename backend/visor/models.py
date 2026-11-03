@@ -143,3 +143,13 @@ class EquivalencyReview(db.Model):
     decision = db.Column(db.String(10), nullable=False, default="pending")
     decided_at = db.Column(db.DateTime(timezone=True))
     notes = db.Column(db.Text, nullable=False, default="")
+
+
+class ScheduleImport(db.Model):
+    """One row per term each time the class-schedule export is loaded. The Schedule screen shows the latest."""
+    id = db.Column(db.Integer, primary_key=True)
+    term_id = db.Column(db.ForeignKey("term.id"), nullable=False)
+    imported_at = db.Column(db.DateTime(timezone=True), nullable=False, default=_utcnow)
+    filename = db.Column(db.String(200))
+    sections = db.Column(db.Integer, nullable=False, default=0)
+    term = db.relationship("Term")

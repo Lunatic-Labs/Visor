@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { PageHead } from './ui.jsx'
+import ScheduleUpload from './ScheduleUpload.jsx'
 
 const FILES = [
   { key: 'terms', label: 'Terms' },
@@ -44,12 +45,17 @@ export default function CatalogImport() {
 
   return (
     <>
-      <PageHead title="Import catalog">
-        Upload Lipscomb's course catalog and section schedule as CSV files. Any row with a problem is skipped
-        and listed with its line number; everything else still imports. Uploading the same file twice is safe.
+      <PageHead title="Import">
+        Load Lipscomb's class schedule and course data. Any row with a problem is skipped and listed;
+        everything else still imports, and uploading the same file twice is safe.
       </PageHead>
 
+      <ScheduleUpload />
+
       <section className="card">
+      <h2>Catalog files</h2>
+      <p className="muted">Courses, prerequisites, terms and sections as separate CSV files in Visor's own format.
+        Upload any combination. Prerequisites can only come in this way for now.</p>
       <form onSubmit={upload} className="lookup-form">
         {FILES.map(({ key, label }) => (
           <label key={key}>
