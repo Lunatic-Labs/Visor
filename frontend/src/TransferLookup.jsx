@@ -1,47 +1,50 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { api } from './api.js'
+import { CourseList, CoursePicker, PageHead, StatusBadge, lipscombLabel, splitCode } from './ui.jsx'
 
-// Bare-bones UI for the transfer-equivalency API (KAN-38). Pick a school, enter the course
-// the student took there, and see whether we already have a confirmed/proposed Lipscomb
-// equivalent or whether it's unknown and needs the registrar's eyes on it.
-export default function TransferLookup() {
+// Look up what a transfer course counts as, and act on the answer. Nothing confirms itself:
+// every approve/reject is saved under the name entered in the top bar.
+export default function TransferLookup({ actor, onChange }) {
   const [schools, setSchools] = useState([])
-  const [schoolId, setSchoolId] = useState('')
-  const [subject, setSubject] = useState('')
-  const [number, setNumber] = useState('')
+  const [courses, setCourses] = useState([])
+  const [schoolName, setSchoolName] = useState('')
+  const [code, setCode] = useState('')
   const [title, setTitle] = useState('')
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
+  const [reviewer, setReviewer] = useState('')
+  const [manualKind, setManualKind] = useState('direct')
+  const [manualCourseId, setManualCourseId] = useState('')
+  const [manualNotes, setManualNotes] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [actionError, setActionError] = useState('')
+  const [message, setMessage] = useState('')
+
   useEffect(() => {
-    fetch('/api/schools')
-      .then((r) => r.json())
-      .then((s) => { setSchools(s); if (s.length) setSchoolId(String(s[0].id)) })
-      .catch(() => setError('Could not reach the API. Is the backend running?'))
+    api('/api/schools').then(setSchools).catch(() => setError('Could not reach Visor. Is the backend running?'))
+    api('/api/courses').then(setCourses).catch(() => {})
   }, [])
+
+  const school = useMemo(() => schools.find((s) => s.name.toLowerCase() === schoolName.trim().toLowerCase()),
+    [schools, schoolName])
+  const [subject, number] = splitCode(code) || []
+
+  async function runLookup() {
+    return api('/api/equivalencies/lookup', {
+      method: 'POST', body: { school_id: school.id, subject, number, title: title.trim() },
+    })
+  }
 
   async function lookup(e) {
     e.preventDefault()
-    setError('')
-    setResult(null)
-    if (!schoolId || !subject.trim() || !number.trim()) {
-      setError('School, subject, and course number are required.')
-      return
-    }
+    setError(''); setActionError(''); setMessage(''); setResult(null)
+    if (!school) { setError('Pick a school from the list (start typing its name).'); return }
+    if (!subject || !number) { setError('Enter the course code as it appears on the transcript, e.g. ENG 100.'); return }
     setLoading(true)
     try {
-      const r = await fetch('/api/equivalencies/lookup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          school_id: Number(schoolId),
-          subject: subject.trim(),
-          number: number.trim(),
-          title: title.trim(),
-        }),
-      })
-      if (!r.ok) throw new Error((await r.json()).error || 'Lookup failed')
-      setResult(await r.json())
+      setResult(await runLookup())
     } catch (err) {
       setError(err.message)
     } finally {
@@ -49,72 +52,238 @@ export default function TransferLookup() {
     }
   }
 
+  async function act(request, done) {
+    setActionError(''); setMessage('')
+    setBusy(true)
+    try {
+      await request()
+      setResult(await runLookup())
+      onChange?.()
+      setMessage(done)
+    } catch (err) {
+      setActionError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function needName() {
+    if (actor.trim()) return false
+    setActionError('Enter your name in the top-right corner first, so the decision is saved under it.')
+    return true
+  }
+
+  const approve = (q) => !needName() && act(
+    () => api(`/api/equivalencies/${q.id}/make-primary`, { method: 'POST', body: { decided_by: actor.trim() } }),
+    'Approved.')
+
+  const approveBoth = (q) => !needName() && act(
+    () => api(`/api/equivalencies/${q.id}/approve-also`, { method: 'POST', body: { decided_by: actor.trim() } }),
+    `Approved. It now counts as both.`)
+
+  const reject = (q) => !needName() && act(
+    () => api(`/api/equivalencies/${q.id}`, { method: 'PUT', body: { status: 'rejected', decided_by: actor.trim() } }),
+    'Rejected.')
+
+  function flag(q) {
+    if (!reviewer.trim()) { setActionError('Enter who should review it, below.'); return }
+    act(() => api(`/api/equivalencies/${q.id}/flag`, {
+      method: 'POST', body: { reviewer: reviewer.trim(), requested_by: actor.trim() || 'registrar' },
+    }), `Flagged for ${reviewer.trim()}.`)
+  }
+
+  const ext = result?.external_course
+  const eq = result?.equivalency
+  // A proposed row with no course is a placeholder made by flagging an unknown course.
+  const placeholder = eq && eq.status === 'proposed' && eq.kind === 'direct' && !eq.course ? eq : null
+  const needsAnswer = result && (result.status === 'unknown' || (result.status === 'proposed' && !result.candidates.length))
+
+  function record() {
+    if (needName()) return
+    if (manualKind === 'direct' && !manualCourseId) { setActionError('Pick the Lipscomb course it counts as.'); return }
+    const body = {
+      kind: manualKind,
+      course_id: manualKind === 'direct' ? Number(manualCourseId) : null,
+      status: 'confirmed',
+      decided_by: actor.trim(),
+      ...(manualNotes.trim() && { notes: manualNotes.trim() }),
+    }
+    act(() => (placeholder
+      ? api(`/api/equivalencies/${placeholder.id}`, { method: 'PUT', body })
+      : api('/api/equivalencies', { method: 'POST', body: { ...body, external_course_id: ext.id } })),
+    'Saved. The next time anyone looks this course up, it will come back approved.')
+  }
+
+  function flagUnknown() {
+    if (!reviewer.trim()) { setActionError('Enter who should review it first.'); return }
+    // KAN-47's endpoint makes (or reuses) the "waiting on review" placeholder and flags it in one step.
+    act(() => api('/api/equivalencies/lookup/flag', {
+      method: 'POST',
+      body: {
+        school_id: ext.school_id, subject: ext.subject, number: ext.number, title: ext.title,
+        reviewer: reviewer.trim(), requested_by: actor.trim() || 'registrar',
+      },
+    }), `Flagged for ${reviewer.trim()}. It's in the review queue until someone records the answer.`)
+  }
+
   return (
     <>
-      <p className="hint">
-        Look up whether a transfer course already has a Lipscomb equivalent. This is a first
-        pass at the UI — layout and what fields the registrar actually wants are still TBD
-        pending a meeting with her.
-      </p>
+      <PageHead title="Look up a transfer course">
+        Enter the school and course code from the student's transcript to see what it counts as at Lipscomb.
+      </PageHead>
 
-      <form onSubmit={lookup} className="lookup-form">
-        <label>
-          School{' '}
-          <select value={schoolId} onChange={(e) => setSchoolId(e.target.value)}>
-            {schools.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-        </label>
-        <label>
-          Subject{' '}
-          <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="CS" />
-        </label>
-        <label>
-          Number{' '}
-          <input value={number} onChange={(e) => setNumber(e.target.value)} placeholder="1113" />
-        </label>
-        <label>
-          Title (optional){' '}
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Intro to Programming" />
-        </label>
-        <button type="submit" disabled={loading}>{loading ? 'Looking up…' : 'Look up'}</button>
-      </form>
-
-      {error && <p className="error">{error}</p>}
+      <section className="card">
+        <form onSubmit={lookup} className="lookup-form">
+          <label className="grow">
+            School
+            <input list="visor-schools" value={schoolName} onChange={(e) => setSchoolName(e.target.value)}
+                   placeholder={`Start typing… (${schools.length} schools)`} />
+            <CourseList courses={courses} />
+            <datalist id="visor-schools">
+              {schools.map((s) => <option key={s.id} value={s.name} />)}
+            </datalist>
+          </label>
+          <label>
+            Course code
+            <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="ENG 100" />
+          </label>
+          <label>
+            Title (optional)
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Freshman English" />
+          </label>
+          <button type="submit" disabled={loading}>{loading ? 'Looking up…' : 'Look up'}</button>
+        </form>
+        {error && <p className="error">{error}</p>}
+      </section>
 
       {result && (
         <section className={`lookup-result status-${result.status}`}>
-          <h2>Result: {result.status}</h2>
-          <p>
-            {result.external_course.school} — {result.external_course.subject} {result.external_course.number}
-            {result.external_course.title ? ` (${result.external_course.title})` : ''}
-          </p>
+          <div className="result-head">
+            <div>
+              <span className="code">{ext.subject} {ext.number}</span> <strong>{ext.title}</strong>
+              <div className="muted small">{ext.school}{ext.credits ? ` · ${ext.credits} hrs` : ''}</div>
+            </div>
+            {eq ? <StatusBadge status={result.status} kind={eq.kind} /> : <StatusBadge status={result.status} />}
+          </div>
 
           {result.status === 'confirmed' && (
-            <p>
-              {result.equivalency.kind === 'direct' && result.equivalency.course
-                ? <>Equivalent to <b>{result.equivalency.course.code}</b> — {result.equivalency.course.title}</>
-                : result.equivalency.kind === 'elective'
-                  ? 'Counts as general elective credit.'
-                  : 'This course does not transfer.'}
-              {result.equivalency.decided_by ? ` (confirmed by ${result.equivalency.decided_by})` : ''}
-            </p>
+            <>
+              <div className="answer">
+                <span className="muted small">Counts at Lipscomb as</span>
+                <div className="answer-main">
+                  {eq.kind === 'direct' && eq.course
+                    ? <><span className="code">{eq.course.code}</span> {eq.course.title} · {eq.course.credits} hrs</>
+                    : lipscombLabel(eq)}
+                </div>
+                <div className="muted small">
+                  Approved by {eq.decided_by || 'unknown'}{eq.decided_at ? ` on ${eq.decided_at}` : ''}
+                </div>
+                {eq.notes && <div className="note">{eq.notes}</div>}
+              </div>
+
+              {result.also_counts_as?.map((q) => (
+                <div className="answer also" key={q.id}>
+                  <span className="muted small">and also counts as</span>
+                  <div className="answer-main">
+                    {q.kind === 'direct' && q.course
+                      ? <><span className="code">{q.course.code}</span> {q.course.title} · {q.course.credits} hrs</>
+                      : lipscombLabel(q)}
+                  </div>
+                  <div className="muted small">
+                    Approved by {q.decided_by || 'unknown'}{q.decided_at ? ` on ${q.decided_at}` : ''}
+                  </div>
+                  {q.notes && <div className="note">{q.notes}</div>}
+                </div>
+              ))}
+
+              {result.alternates?.length > 0 && (
+                <div className="alternates">
+                  <p><strong>Also approved as</strong> <span className="muted small">(the SIS has more than one approval for this course)</span></p>
+                  {result.alternates.map((q) => (
+                    <div className="alt-row" key={q.id}>
+                      <div className="alt-main">
+                        <strong>{lipscombLabel(q)}</strong>
+                        {q.notes && <div className="muted small">{q.notes}</div>}
+                      </div>
+                      <div className="row-actions">
+                        <button type="button" className="btn-ghost" disabled={busy} onClick={() => approve(q)}>Use this instead</button>
+                        <button type="button" className="btn-ghost" disabled={busy} onClick={() => approveBoth(q)}>
+                          Approve for both
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
 
           {result.status === 'proposed' && result.candidates.length > 0 && (
             <>
-              <p>No confirmed mapping yet. Candidates:</p>
-              <ul>
-                {result.candidates.map((c, i) => (
-                  <li key={i}>{c.course?.code} — {c.course?.title} {c.why ? `(${c.why})` : ''}</li>
-                ))}
-              </ul>
+              <p>There's a likely match, but nobody has approved it yet.</p>
+              {result.candidates.map((c) => (
+                <div className="alt-row" key={c.id}>
+                  <div className="alt-main">
+                    <strong>{c.course?.code} — {c.course?.title}</strong>
+                    {c.why && <div className="muted small">{c.why}</div>}
+                  </div>
+                  <div className="row-actions">
+                    <button type="button" className="btn-primary" disabled={busy} onClick={() => approve(c)}>Approve</button>
+                    <button type="button" className="btn-danger" disabled={busy} onClick={() => reject(c)}>Reject</button>
+                    <button type="button" className="btn-ghost" disabled={busy} onClick={() => flag(c)}>Flag for a professor</button>
+                  </div>
+                </div>
+              ))}
+              <div className="actor-fields">
+                <label>Professor or department to flag to
+                  <input value={reviewer} onChange={(e) => setReviewer(e.target.value)} placeholder="e.g. Dr. Nordstrom" />
+                </label>
+              </div>
             </>
           )}
 
-          {result.status === 'unknown' && (
-            <p>No existing mapping. This would need to be flagged for the registrar / a
-              department professor to weigh in on.</p>
+          {needsAnswer && (
+            <>
+              {placeholder
+                ? <p>No answer on file yet{placeholder.pending_reviews
+                  ? ` — flagged for a professor (${placeholder.pending_reviews} waiting)` : ''}. Record it once you know.</p>
+                : <p>This course isn't on file yet. If you know what it counts as, record it now and it will be
+                  approved for every future student.</p>}
+              <div className="lookup-form">
+                <label>
+                  It counts as
+                  <select value={manualKind} onChange={(e) => setManualKind(e.target.value)}>
+                    <option value="direct">a specific Lipscomb course</option>
+                    <option value="elective">general elective credit</option>
+                    <option value="none">no credit (doesn't transfer)</option>
+                  </select>
+                </label>
+                {manualKind === 'direct' && (
+                  <label className="grow">
+                    Lipscomb course
+                    <CoursePicker courses={courses} onChange={setManualCourseId} />
+                  </label>
+                )}
+                <label className="grow">
+                  Who approved it, and how (optional)
+                  <input value={manualNotes} onChange={(e) => setManualNotes(e.target.value)}
+                         placeholder="e.g. Dr. Nordstrom approved by email, 10/22" />
+                </label>
+                <button type="button" disabled={busy} onClick={record}>Save as approved</button>
+              </div>
+              <p className="muted small">Not sure? Flag it for a professor instead. Visor won't guess for you.</p>
+              <div className="lookup-form">
+                <label className="grow">
+                  Professor or department
+                  <input value={reviewer} onChange={(e) => setReviewer(e.target.value)} placeholder="e.g. Dr. Nordstrom" />
+                </label>
+                <button type="button" className="btn-ghost" disabled={busy} onClick={flagUnknown}>Flag for a professor</button>
+              </div>
+            </>
           )}
+
+          {actionError && <p className="error">{actionError}</p>}
+          {message && !actionError && <p className="success">{message}</p>}
         </section>
       )}
     </>

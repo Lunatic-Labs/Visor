@@ -49,9 +49,39 @@ flask --app wsgi import-sis "../data/private/Lipscomb University Transfer Course
 
 Running it twice is safe. To see only real data locally, use a fresh database and skip `flask seed`'s fake equivalencies. Don't load it into the shared Neon database without checking with the team first (it shows up on the public site). Details: `specs/03-design-equivalencies.md`, "SIS import".
 
+## Loading the real class schedule (and the full list of Lipscomb courses)
+
+Lipscomb's public class-schedule page has Export > CSV. Save that file in `data/private/` (gitignored), then:
+
+```
+cd backend
+flask --app wsgi import-schedule --dry-run "../data/private/2027 Spring Semester Class Schedule  Lipscomb University.csv"
+flask --app wsgi import-schedule "../data/private/2027 Spring Semester Class Schedule  Lipscomb University.csv"
+```
+
+The registrar does the same without a terminal: Import tab > Class schedule > choose the CSV > Upload (it has a "check only" box too). Either way, the load time is recorded and shown on the Schedule tab as "last updated", turning amber after a day.
+
+A re-upload updates seats, adds new classes, and makes each class's meeting times match the file. Classes that are no longer in the file are kept, and the result says how many, unless you also tick "This file is the complete schedule: remove classes that aren't in it" (CLI: `--remove-missing`). Use that only with a complete export, because the page's filters apply to the CSV. Removing more than 10 classes and more than 25% of the term is refused as a likely partial export.
+
+One row per section becomes a course (if new), a section, and its meeting times. Running it twice is safe, and courses already in the database (e.g. from the SIS import) are never overwritten. Rows it can't use fully (a section code over 4 characters, meetings listed as calendar dates, an end time before the start) are listed at the end. It reads only this export's format, not the four-file format below. The export has no prerequisites. Details: `backend/visor/schedule_import.py`.
+
+To see only real data locally, import the SIS file and the schedule into a fresh database and skip `flask seed`.
+
+## Loading the registrar's catalog and section schedule
+
+Same idea, for `terms.csv` / `courses.csv` / `prereqs.csv` / `sections.csv` (format: `data/sample/README.md`):
+
+```
+cd backend
+flask --app wsgi import-csv --dry-run path/to/her/csvs
+flask --app wsgi import-csv path/to/her/csvs
+```
+
+Each row is checked on its own — a bad row (bad number, unknown course, overlapping end/start time, ...) is skipped and printed as `file line N: reason`; every valid row in the same files still loads. Running it twice is safe: an unchanged row is left alone, a changed one (e.g. updated enrollment) is updated, nothing is duplicated.
+
 ## Routes that change data need a token on the live site
 
-`main` is public, so POST/PUT routes that write (create/confirm/flag equivalencies) check header `X-Visor-Token` against the `VISOR_WRITE_TOKEN` env var. Locally with `flask run --debug` you don't need it. On Vercel, writes stay off until someone sets `VISOR_WRITE_TOKEN` in the project's env vars; then send it with `curl -H "X-Visor-Token: ..."`. Never commit the token.
+`main` is public, so every POST/PUT route that writes (create/confirm/flag equivalencies, make-primary, approve-also, adding a school, and the catalog and schedule uploads) checks header `X-Visor-Token` against the `VISOR_WRITE_TOKEN` env var. Locally with `flask run --debug` you don't need it. On Vercel, writes stay off until someone sets `VISOR_WRITE_TOKEN` in the project's env vars; then send it with `curl -H "X-Visor-Token: ..."`. Never commit the token. The web app doesn't send the token yet, so its buttons that save something only work locally for now.
 
 ## Tests and lint
 

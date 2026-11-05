@@ -65,6 +65,7 @@ cd frontend && npm install && npm run dev        # http://localhost:5173, /api p
 | `backend/visor/models.py`, `seed.py` | SQLAlchemy models, CSV loaders |
 | `backend/visor/auth.py` | `@require_write_token`: every route that writes to the DB must use it (KAN-46) |
 | `backend/visor/sis_import.py` | Importer for the registrar's SIS equivalency export (`flask import-sis`) |
+| `backend/visor/schedule_import.py` | Importer for the public class-schedule CSV export (`flask import-schedule`, or the Import tab via `POST /api/import/schedule`): courses, sections, meetings, and a "last updated" log |
 | `data/sample/`, `data/equivalencies/` | Fake seed data; `data/equivalencies/README.md` lists the demo lookups |
 | `frontend/src/` | React app |
 | `api/index.py`, `vercel.json` | Vercel deploy layer (Flask as one serverless function) |
@@ -78,4 +79,4 @@ Hosting: Vercel (frontend + API) and Neon Postgres. Production: https://visor-st
 - ~~SIS export format~~ Answered: see `specs/03-design-equivalencies.md`, "SIS import".
 - The SIS export lists "Lipscomb University" itself as a transfer source, and UT Knoxville under two spellings. Ask Ms. Hood what the Lipscomb rows are.
 - Who can confirm an equivalency: registrar only, or professors too? (KAN-29)
-- One external course *does* map to two Lipscomb courses in the real SIS export (135 cases). For now: most-used is `confirmed`, the rest `proposed`. Need Ms. Hood to say what decides which applies.
+- One external course *does* map to two Lipscomb courses in the real SIS export (135 cases). On import: most-used is `confirmed`, the rest `proposed`. The registrar can now settle each one in the Review Queue: use the other one instead, or approve both (`approve-also`, e.g. lecture + lab). Still worth asking Ms. Hood what decides it, so the rule can be applied in bulk.

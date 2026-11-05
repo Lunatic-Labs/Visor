@@ -43,7 +43,7 @@ Why `status` lives on the equivalency and not the external course: one external 
 
 ## API contract
 
-**Write protection (KAN-46, stopgap until login, KAN-30).** `POST /api/equivalencies`, `PUT /api/equivalencies/<id>`, and `POST /api/equivalencies/<id>/flag` need header `X-Visor-Token` matching the `VISOR_WRITE_TOKEN` env var: `401` if it's missing or wrong. If the env var isn't set, writes return `403`, except under `flask run --debug` and in tests, which stay open. GETs and `POST /api/equivalencies/lookup` stay open. (Lookup can insert an unseen external course; that's accepted for now.) New write routes use `@require_write_token` or `bp.before_request(write_guard)` from `backend/visor/auth.py`.
+**Write protection (KAN-46, stopgap until login, KAN-30).** `POST /api/equivalencies`, `PUT /api/equivalencies/<id>`, `POST /api/equivalencies/<id>/flag`, `POST /api/equivalencies/lookup/flag`, `POST /api/equivalencies/<id>/make-primary`, `POST /api/equivalencies/<id>/approve-also`, `POST /api/schools`, and the uploads `POST /api/import/catalog` and `POST /api/import/schedule` need header `X-Visor-Token` matching the `VISOR_WRITE_TOKEN` env var: `401` if it's missing or wrong. If the env var isn't set, writes return `403`, except under `flask run --debug` and in tests, which stay open. GETs and `POST /api/equivalencies/lookup` stay open. (Lookup can insert an unseen external course; that's accepted for now.) New write routes use `@require_write_token` or `bp.before_request(write_guard)` from `backend/visor/auth.py`.
 
 All JSON. Errors are `{"error": "message"}` with a 4xx status. The frontend builds against these shapes with mock data first.
 
@@ -52,6 +52,10 @@ All JSON. Errors are `{"error": "message"}` with a 4xx status. The frontend buil
 ```json
 [{"id": 1, "name": "Nashville State Community College", "state": "TN", "kind": "community_college"}]
 ```
+
+### `POST /api/schools`
+
+Request: `{"name": "University of Tennessee, Knoxville", "state": "TN"}` (`state` optional, 2 letters). Adds a school a student transferred from, for courses entered by hand. `201` with the school; if a school with the same name exists (ignoring case and extra spaces) that one is returned with `200`, so the same spelling is never added twice. `kind` is guessed from the name.
 
 ### `GET /api/schools/<id>/courses?q=comp`
 
@@ -70,7 +74,7 @@ List equivalencies, optionally filtered by `status` or `school_id`. Returns the 
 Request:
 
 ```json
-{"school_id": 1, "subject": "COMP", "number": "1010", "title": "Intro to Programming"}
+{"school_id": 1, "subject": "COMP", "number": "1010", "title": "Intro to Programming", "credits": 3}
 ```
 
 `school_id` is required. `subject` + `number` are required. `title` is optional but helps the rules.
@@ -92,11 +96,17 @@ Response, one of three shapes, always with `status`:
   "external_course": {...},
   "equivalency": {"id": 15, "kind": "direct", "course": {...}, "confidence": 0.82, "source": "rules"},
   "candidates": [
-    {"course": {"id": 3, "code": "CS 1113", "title": "Programming I", "credits": 3}, "score": 0.82, "why": "subject COMP→CS, level 1xxx, title similarity 0.71"},
-    {"course": {"id": 4, "code": "CS 1123", "title": "Programming II", "credits": 3}, "score": 0.41, "why": "subject COMP→CS, level 1xxx"}
+    {"id": 15, "course": {"id": 3, "code": "CS 1113", "title": "Programming I", "credits": 3}, "score": 0.82, "why": "subject COMP→CS, level 1xxx, title similarity 0.71"},
+    {"id": 16, "course": {"id": 4, "code": "CS 1123", "title": "Programming II", "credits": 3}, "score": 0.41, "why": "subject COMP→CS, level 1xxx"}
   ]
 }
 ```
+
+`title` and `credits` (optional, whole hours) are only used when the external course isn't in the table yet and gets created.
+
+A `confirmed` response also carries `also_counts_as`: any further `confirmed` rows for the same external course, when the registrar approved it to count as more than one Lipscomb course (see `approve-also`). `equivalency` is the earliest approved one. And it carries `alternates`: the other `proposed` rows (e.g. the SIS approved it as two Lipscomb courses), so the registrar can see them without leaving the lookup. Both are empty lists when there are none.
+
+A candidate's `id` is the equivalency row it came from, so the UI can confirm, reject, or flag it directly. Rule-engine candidates that have no row yet would leave `id` out.
 
 ```json
 {"status": "unknown", "external_course": {...}, "equivalency": null, "candidates": []}
@@ -124,7 +134,23 @@ After a flag, the lookup for that course still says `unknown`, but `equivalency`
 
 ### `POST /api/equivalencies` and `PUT /api/equivalencies/<id>`
 
-Registrar creates or confirms an equivalency. Body is the `equivalency` object fields (`external_course_id`, `course_id`, `kind`, `status`, `decided_by`, `notes`). Confirming sets `decided_at`. **Not needed for Thursday** — nice to have.
+Registrar creates or confirms an equivalency. Body is the `equivalency` object fields (`external_course_id`, `course_id`, `kind`, `status`, `decided_by`, `notes`). Confirming sets `decided_at`. Making a second row `confirmed` for the same external course this way is a `409`: it has to be a deliberate choice, through `make-primary` (instead) or `approve-also` (as well). A row that is already confirmed can still be edited.
+
+### `POST /api/equivalencies/<id>/approve-also`
+
+Request: `{"decided_by": "S. Hood"}`. Confirms this row **in addition to** whatever is already confirmed for the same external course, so the incoming course counts as both (e.g. a combined lecture + lab course earning a Lipscomb lecture and its lab). Nothing else is demoted; a note records what it was approved alongside, by whom, and when. `400` without `decided_by`. (v0.1 of this spec said one external course maps to one Lipscomb course; the SIS export has 135 courses approved more than one way, so the registrar can now say "both".)
+
+### `POST /api/equivalencies/<id>/make-primary`
+
+Request: `{"decided_by": "S. Hood"}`. Confirms this row and moves any other `confirmed` row for the same external course back to `proposed` (with a note saying who replaced it and when), in one transaction. This is how the registrar settles the external courses the SIS approved as more than one Lipscomb course. `400` without `decided_by`.
+
+### `GET /api/equivalencies/summary`
+
+Dashboard counts, computed in SQL: `{"confirmed", "proposed", "rejected", "electives", "schools", "pending_reviews", "top_schools": [{"name", "confirmed"}]}`.
+
+### `GET /api/courses?q=prog`
+
+Lipscomb's own catalog (`id`, `code`, `title`, `credits`), filtered by subject, number, or title. Used to pick the Lipscomb course when recording an equivalency by hand. Capped at 5,000 rows (the full catalog is about 1,200 courses once the class schedule is imported).
 
 ## Rules (pure Python, `backend/visor/rules/equivalency.py`)
 
@@ -169,11 +195,13 @@ Rejected table rows are ignored. A confirmed row always wins over candidates.
 
 ## Frontend (`frontend/src/`)
 
-- New view `EquivalencyLookup.jsx`: school `<select>` (from `/api/schools`), subject + number inputs, optional title, a Look up button.
-- Result card renders by `status` (the three shapes above). Proposed shows candidates as a ranked list with score and `why`.
-- "Flag for review" on proposed/unknown: small form (reviewer email, note) → `POST .../flag` → success toast.
-- Until the backend lands: `frontend/src/mock/equivalencies.json` holding one response per status, and a `USE_MOCK` flag.
-- Keep the existing term/conflicts screen; add a two-link nav at the top.
+As built (KAN-40). Tabs in a top bar; the person's name is entered once in the top bar, kept in the browser, and sent as `decided_by` on every confirm/reject.
+
+- **Dashboard**: counts from `/summary`, top transfer schools, recent decisions, and what each status means.
+- **Look up**: school search + one course-code field ("ENG 100"), optional title. Confirmed shows the match and its notes; proposed lists candidates with Confirm / Reject / Flag; unknown offers to record a mapping (specific course, elective, or no credit).
+- **Review queue**: every external course with a `proposed` row, grouped, showing what it currently counts as. Actions: Use this instead (`make-primary`), Approve for both (`approve-also`), Dismiss (reject), Flag for a professor.
+- **Library**: every equivalency, searchable, filterable by school and status, paged, with a CSV download of the current filter. "+ Add equivalency" records one by hand: school (added with `POST /api/schools` if new), course code, title, credits, what it counts as, and a note; it goes through `lookup` (which creates the external course) and is saved as approved.
+- Import catalog, Schedule, Prerequisites, and a Degree audit placeholder.
 
 ## Seed data (`data/equivalencies/`)
 

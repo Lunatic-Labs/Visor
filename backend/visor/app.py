@@ -2,14 +2,17 @@
 from __future__ import annotations
 
 import os
+from datetime import timezone
 from pathlib import Path
 
 import click
 from flask import Flask, abort, jsonify, request
+from sqlalchemy import or_
+from sqlalchemy.orm import selectinload
 from sqlalchemy.pool import NullPool
 
 from . import rules
-from .models import Course, PrereqGroup, Section, Term, db
+from .models import Course, PrereqGroup, ScheduleImport, Section, Term, db
 
 DEFAULT_DATA = Path(__file__).resolve().parents[2] / "data" / "sample"
 DEFAULT_EQUIV_DATA = Path(__file__).resolve().parents[2] / "data" / "equivalencies"
@@ -62,8 +65,10 @@ def create_app(config: dict | None = None) -> Flask:
     app.config.update(config or {})
     db.init_app(app)
 
+    from .catalog_import import bp as catalog_import_bp
     from .equivalencies import bp as equivalencies_bp
     app.register_blueprint(equivalencies_bp)
+    app.register_blueprint(catalog_import_bp)
 
     with app.app_context():
         db.create_all()
@@ -74,6 +79,31 @@ def create_app(config: dict | None = None) -> Flask:
         from .seed import load, load_equivalencies
         print(load(os.environ.get("VISOR_DATA_DIR", DEFAULT_DATA)))
         print(load_equivalencies(os.environ.get("VISOR_EQUIV_DATA_DIR", DEFAULT_EQUIV_DATA)))
+
+    @app.cli.command("import-csv")
+    @click.argument("data_dir", type=click.Path(exists=True, file_okay=False))
+    @click.option("--dry-run", is_flag=True, help="Check the files and report what would happen, without saving.")
+    def import_csv_cmd(data_dir, dry_run):
+        """Import terms/courses/prereqs/sections CSVs from DATA_DIR (see data/sample/README.md)."""
+        from .seed import load
+        result = load(data_dir, dry_run=dry_run)
+        print(("Dry run, nothing saved: " if dry_run else "Imported: ") + str(result))
+        if result.errors:
+            raise click.ClickException(f"{len(result.errors)} row(s) rejected; see above.")
+
+    @app.cli.command("import-schedule")
+    @click.argument("path", type=click.Path(exists=True, dir_okay=False))
+    @click.option("--dry-run", is_flag=True, help="Check the file and report what would happen, without saving.")
+    @click.option("--remove-missing", is_flag=True,
+                  help="Also remove sections the file no longer lists. Use only with the complete schedule.")
+    def import_schedule_cmd(path, dry_run, remove_missing):
+        """Load a class schedule exported from the university's public schedule page (.csv)."""
+        from .schedule_import import RemovalTooLarge, load_schedule
+        try:
+            result = load_schedule(path, dry_run=dry_run, remove_missing=remove_missing)
+        except RemovalTooLarge as e:
+            raise click.ClickException(str(e)) from None
+        print(("Dry run, nothing saved: " if dry_run else "Imported: ") + str(result))
 
     @app.cli.command("import-sis")
     @click.argument("path", type=click.Path(exists=True, dir_okay=False))
@@ -90,13 +120,40 @@ def create_app(config: dict | None = None) -> Flask:
     def health():
         return {"status": "ok"}
 
+    @app.get("/api/courses")
+    def courses():
+        """Lipscomb's own catalog, for picking a course when confirming an equivalency manually.
+        ?q= filters by subject, number, or title (case-insensitive substring)."""
+        query = Course.query
+        q = request.args.get("q", "").strip()
+        if q:
+            like = f"%{q}%"
+            query = query.filter(or_(Course.subject.ilike(like), Course.number.ilike(like),
+                                     Course.title.ilike(like)))
+        rows = query.order_by(Course.subject, Course.number).limit(5000).all()
+        return jsonify([{"id": c.id, "code": c.code, "title": c.title, "credits": c.credits} for c in rows])
+
     @app.get("/api/terms")
     def terms():
-        return jsonify([{"code": t.code, "name": t.name} for t in Term.query.order_by(Term.code)])
+        """schedule_updated_at / schedule_file: when the class schedule was last loaded for the term
+        (null if never). UTC, with a Z, so the browser can show it in the viewer's own timezone."""
+        latest: dict[int, ScheduleImport] = {}
+        for si in ScheduleImport.query.order_by(ScheduleImport.imported_at.desc(), ScheduleImport.id.desc()):
+            latest.setdefault(si.term_id, si)
+
+        def stamp(term):
+            si = latest.get(term.id)
+            if si is None:
+                return {"schedule_updated_at": None, "schedule_file": None}
+            at = si.imported_at if si.imported_at.tzinfo else si.imported_at.replace(tzinfo=timezone.utc)
+            return {"schedule_updated_at": at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    "schedule_file": si.filename}
+        return jsonify([{"code": t.code, "name": t.name, **stamp(t)} for t in Term.query.order_by(Term.code)])
 
     def _term_sections(code: str) -> list[Section]:
         term = Term.query.filter_by(code=code).first() or abort(404, "unknown term")
-        return Section.query.filter_by(term_id=term.id).all()
+        return (Section.query.filter_by(term_id=term.id)
+                .options(selectinload(Section.course), selectinload(Section.meetings)).all())
 
     @app.get("/api/terms/<code>/sections")
     def sections(code):
@@ -121,6 +178,8 @@ def create_app(config: dict | None = None) -> Flask:
         groups = PrereqGroup.query.filter_by(course_id=course.id).all()
         prereqs = {course.code: [[i.required_course.code for i in g.items] for g in groups]}
         done = {c.strip() for c in request.args.get("completed", "").split(",") if c.strip()}
-        return jsonify({"course": course.code, "missing": rules.missing_prereqs(course.code, prereqs, done)})
+        return jsonify({"course": course.code, "missing": rules.missing_prereqs(course.code, prereqs, done),
+                        # With no prerequisite rows at all, "nothing missing" would mean "nothing loaded".
+                        "prereq_data_loaded": db.session.query(PrereqGroup.id).first() is not None})
 
     return app

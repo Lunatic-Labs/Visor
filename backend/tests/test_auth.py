@@ -45,3 +45,21 @@ def test_reads_and_lookup_stay_open(prod, client):
 def test_local_dev_and_tests_need_no_token(app, client):
     # app fixture runs with TESTING=True, like pytest and `flask run --debug`
     assert client.post("/api/equivalencies/1/flag", json={"reviewer": "Dr. Nordstrom"}).status_code == 201
+
+
+# Routes added after KAN-46 (schools, make-primary, approve-also, the catalog/schedule uploads).
+NEWER_WRITES = [
+    ("post", "/api/schools", {"name": "Example College"}),
+    ("post", "/api/equivalencies/1/make-primary", {"decided_by": "x"}),
+    ("post", "/api/equivalencies/1/approve-also", {"decided_by": "x"}),
+    ("post", "/api/import/catalog", {}),
+    ("post", "/api/import/schedule", {}),
+]
+
+
+@pytest.mark.parametrize("method,url,body", NEWER_WRITES)
+def test_newer_writes_are_guarded_too(prod, client, monkeypatch, method, url, body):
+    assert getattr(client, method)(url, json=body).status_code == 403
+    monkeypatch.setenv(TOKEN_ENV, "s3cret")
+    assert getattr(client, method)(url, json=body, headers={HEADER: "wrong"}).status_code == 401
+    assert getattr(client, method)(url, json=body, headers={HEADER: "s3cret"}).status_code not in (401, 403)

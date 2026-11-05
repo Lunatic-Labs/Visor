@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { PageHead } from './ui.jsx'
 
 // Bare-bones UI for the prereq-check endpoint, which is already live on the backend.
 export default function PrereqCheck() {
@@ -35,8 +36,9 @@ export default function PrereqCheck() {
 
   return (
     <>
-      <p className="hint">Check whether a student has the prerequisites for a course.</p>
+      <PageHead title="Prerequisites">Check whether a student has the prerequisites for a course.</PageHead>
 
+      <section className="card">
       <form onSubmit={check} className="lookup-form">
         <label>
           Subject{' '}
@@ -52,12 +54,25 @@ export default function PrereqCheck() {
         </label>
         <button type="submit">Check</button>
       </form>
-
       {error && <p className="error">{error}</p>}
+      </section>
 
-      {result && (
-        <section>
-          <h2>{result.course}</h2>
+      {result && !result.prereq_data_loaded && (
+        <section className="card">
+          <h2>{result.course} <span className="badge badge-muted">no data yet</span></h2>
+          <p>Prerequisites haven't been loaded into Visor yet, so it can't tell you whether this course's
+            prerequisites are met.</p>
+        </section>
+      )}
+
+      {result && result.prereq_data_loaded && (
+        <section className="card">
+          <h2>
+            {result.course}
+            <span className={`badge badge-${result.missing.length === 0 ? 'confirmed' : 'unknown'}`}>
+              {result.missing.length === 0 ? 'met' : 'missing prereqs'}
+            </span>
+          </h2>
           {result.missing.length === 0
             ? <p>All prerequisites met.</p>
             : (
