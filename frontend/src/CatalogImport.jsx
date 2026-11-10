@@ -76,11 +76,14 @@ export default function CatalogImport() {
       {result && (
         <section className={`lookup-result status-${result.ok ? 'confirmed' : 'proposed'}`}>
           <h2>
-            Import result
+            {result.dry_run ? 'Dry run: nothing saved' : 'Import result'}
             <span className={`badge badge-${result.ok ? 'confirmed' : 'proposed'}`}>
-              {result.ok ? 'all rows saved' : `${result.errors.length} rejected`}
+              {result.ok
+                ? (result.dry_run ? 'all rows would save' : 'all rows saved')
+                : `${result.errors.length} rejected`}
             </span>
           </h2>
+          {result.dry_run && <p className="muted small">These are the counts a real import would save.</p>}
           <ul>
             {Object.entries(result.counts).map(([k, v]) => <li key={k}>{k}: {v}</li>)}
           </ul>

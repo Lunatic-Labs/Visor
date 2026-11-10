@@ -87,7 +87,7 @@ def test_every_bad_row_is_reported_with_its_line(app, data):
     assert "unknown term '2099FA'" in errors
     assert "can't be its own prerequisite" in errors
     assert len(result.errors) == 6
-    # and the sections.csv rows that WERE valid still made it in
+    # none of the bad sections.csv rows (03-06) made it in
     assert Section.query.join(Course).filter(Course.subject == "CS", Course.number == "3213",
                                              Section.section_no.in_(("03", "04", "05", "06"))).count() == 0
 
@@ -156,3 +156,48 @@ def test_cli_dry_run(app, data):
     result = app.test_cli_runner().invoke(args=["import-csv", str(data), "--dry-run"])
     assert result.exit_code == 0, result.output
     assert "Dry run, nothing saved" in result.output
+
+
+def test_line_number_counts_blank_and_multiline_rows(app, data):
+    """The reported line is the file's own line, not the row count."""
+    lines = (data / "courses.csv").read_text().splitlines()
+    append(data / "courses.csv", "")  # blank line
+    append(data / "courses.csv", 'CS,4997,"Senior\nSeminar",3')  # quoted line break: two lines
+    append(data / "courses.csv", "CS,4999,Capstone,three")
+    result = load(data)
+    assert result.errors == [f"courses.csv line {len(lines) + 4}: credits 'three' is not a whole number"]
+
+
+def test_too_large_number_is_a_row_error(app, data):
+    """Bigger than a database INTEGER: reported like any bad row, and the good rows still save."""
+    append(data / "courses.csv", "CS,4999,Capstone,9223372036854775808")
+    append(data / "courses.csv", "CS,4998,Independent Study,3")
+    result = load(data)
+    assert len(result.errors) == 1 and "credits 9223372036854775808 is too large" in result.errors[0]
+    assert Course.query.filter_by(subject="CS", number="4998").one()
+
+
+def test_database_error_saves_nothing(app, data, monkeypatch):
+    """An error from the database itself (not a row we checked) rolls back the whole import."""
+    from sqlalchemy.exc import IntegrityError
+
+    from visor import seed
+
+    real = seed._import_section
+
+    def fail_on_lab(row, counts):
+        if row["section"] == "99":
+            raise IntegrityError("INSERT", {}, Exception("boom"))
+        return real(row, counts)
+
+    monkeypatch.setattr(seed, "STEPS", [(n, fail_on_lab if f is real else f) for n, f in seed.STEPS])
+    append(data / "courses.csv", "CS,4999,Capstone,3")
+    append(data / "sections.csv", "2027SP,CS 4999,99,20,0,TR,16:00,17:15")
+    before = Course.query.count()
+
+    result = load(data)
+
+    assert not result.ok and "the database refused this (IntegrityError); nothing was saved" in result.errors[-1]
+    assert result.errors[-1].startswith("sections.csv line")
+    assert all(v == 0 for v in result.counts.values())
+    assert Course.query.count() == before and Course.query.filter_by(subject="CS", number="4999").first() is None

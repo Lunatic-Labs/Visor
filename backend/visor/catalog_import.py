@@ -42,7 +42,7 @@ def import_catalog():
             file.save(d / f"{name}.csv")
         result = load(d, dry_run=dry_run, only=[f"{name}.csv" for name in uploaded])
 
-    return jsonify({"ok": result.ok, "counts": result.counts, "errors": result.errors})
+    return jsonify({"ok": result.ok, "dry_run": dry_run, "counts": result.counts, "errors": result.errors})
 
 
 @bp.post("/import/schedule")
