@@ -1,16 +1,22 @@
-// The write key (VISOR_WRITE_TOKEN on the server, KAN-46) is typed into the top bar and kept in
-// sessionStorage only: never in the code or a VITE_ env var, which would put it in the public bundle.
+// The write key (VISOR_WRITE_TOKEN on the server, KAN-46) is typed into the top bar: never in the
+// code or a VITE_ env var, which would put it in the public bundle. Requests use the copy in memory;
+// sessionStorage only carries it across a reload, so if storage is blocked, saves still work.
 const WRITE_KEY = 'visor.writeKey'
+let writeKey = null
 
 export function getWriteKey() {
-  try { return sessionStorage.getItem(WRITE_KEY) || '' } catch { return '' }
+  if (writeKey === null) {
+    try { writeKey = sessionStorage.getItem(WRITE_KEY) || '' } catch { writeKey = '' }
+  }
+  return writeKey
 }
 
 export function setWriteKey(key) {
+  writeKey = key
   try {
     if (key) sessionStorage.setItem(WRITE_KEY, key)
     else sessionStorage.removeItem(WRITE_KEY)
-  } catch { /* private window: the key just won't survive a reload */ }
+  } catch { /* storage blocked: the key works until the page is reloaded */ }
 }
 
 // Headers for a request that changes data. Also used by the CSV uploads, which call fetch directly.
