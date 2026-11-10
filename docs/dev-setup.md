@@ -81,7 +81,7 @@ Each row is checked on its own — a bad row (bad number, unknown course, overla
 
 ## Routes that change data need a token on the live site
 
-`main` is public, so every POST/PUT route that writes (create/confirm/flag equivalencies, make-primary, approve-also, adding a school, and the catalog and schedule uploads) checks header `X-Visor-Token` against the `VISOR_WRITE_TOKEN` env var. Locally with `flask run --debug` you don't need it. On Vercel, writes stay off until someone sets `VISOR_WRITE_TOKEN` in the project's env vars; then send it with `curl -H "X-Visor-Token: ..."`. Never commit the token. The web app doesn't send the token yet, so its buttons that save something only work locally for now.
+`main` is public, so every POST/PUT route that writes (create/confirm/flag equivalencies, make-primary, approve-also, adding a school, and the catalog and schedule uploads) checks header `X-Visor-Token` against the `VISOR_WRITE_TOKEN` env var. Locally with `flask run --debug` you don't need it. On Vercel, writes stay off until someone sets `VISOR_WRITE_TOKEN` in the project's env vars; then send it with `curl -H "X-Visor-Token: ..."`. Never commit the token. In the web app, paste it into the "Write key" box in the top bar: it's kept in that browser tab only (sessionStorage) and sent with every save and upload. It is deliberately not a `VITE_` env var, since those are baked into the public JS bundle.
 
 ## Tests and lint
 

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { failureMessage, writeHeaders } from './api.js'
 import { PageHead } from './ui.jsx'
 import ScheduleUpload from './ScheduleUpload.jsx'
 
@@ -33,9 +34,11 @@ export default function CatalogImport() {
 
     setLoading(true)
     try {
-      const r = await fetch(`/api/import/catalog${dryRun ? '?dry_run=1' : ''}`, { method: 'POST', body })
-      if (!r.ok) throw new Error((await r.json()).error || 'Import failed')
-      setResult(await r.json())
+      const r = await fetch(`/api/import/catalog${dryRun ? '?dry_run=1' : ''}`,
+        { method: 'POST', body, headers: writeHeaders() })
+      const data = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(failureMessage(r.status, data, 'Import failed'))
+      setResult(data)
     } catch (err) {
       setError(err.message)
     } finally {

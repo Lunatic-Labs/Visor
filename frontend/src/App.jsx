@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api } from './api.js'
+import { api, getWriteKey, setWriteKey } from './api.js'
 import { PageHead } from './ui.jsx'
 import Dashboard from './Dashboard.jsx'
 import TransferLookup from './TransferLookup.jsx'
@@ -42,12 +42,18 @@ function savedName() {
 export default function App() {
   const [activeId, setActiveId] = useState('dashboard')
   const [actor, setActorState] = useState(savedName)
+  const [writeKey, setWriteKeyState] = useState(getWriteKey)
   const [reviewCount, setReviewCount] = useState(null)
   const Active = TABS.find((t) => t.id === activeId).Component
 
   function setActor(name) {
     setActorState(name)
     try { localStorage.setItem(NAME_KEY, name) } catch { /* private window: name just won't persist */ }
+  }
+
+  function changeWriteKey(key) {
+    setWriteKeyState(key)
+    setWriteKey(key)
   }
 
   const refreshCount = useCallback(() => {
@@ -85,6 +91,11 @@ export default function App() {
         <label className="whoami">
           <span>Your name</span>
           <input value={actor} onChange={(e) => setActor(e.target.value)} placeholder="Needed to approve" />
+        </label>
+        <label className="whoami" title="Kept only in this browser tab. Ask the team for it.">
+          <span>Write key</span>
+          <input type="password" autoComplete="off" value={writeKey}
+                 onChange={(e) => changeWriteKey(e.target.value)} placeholder="Needed to save" />
         </label>
       </header>
 
