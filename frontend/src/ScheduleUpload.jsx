@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api } from './api.js'
+import { api, failureMessage, writeHeaders } from './api.js'
 import { formatWhen, timeAgo } from './ui.jsx'
 
 const LINES = [
@@ -47,9 +47,10 @@ export default function ScheduleUpload() {
     const qs = params.toString()
     setLoading(true)
     try {
-      const r = await fetch(`/api/import/schedule${qs ? `?${qs}` : ''}`, { method: 'POST', body })
+      const r = await fetch(`/api/import/schedule${qs ? `?${qs}` : ''}`,
+        { method: 'POST', body, headers: writeHeaders() })
       const data = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(data.error || `Upload failed (${r.status})`)
+      if (!r.ok) throw new Error(failureMessage(r.status, data, `Upload failed (${r.status})`))
       setResult(data)
       if (!data.dry_run) loadLast()
     } catch (err) {

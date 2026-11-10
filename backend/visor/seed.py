@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from .models import (Course, Equivalency, EquivalencyReview, ExternalCourse, MeetingTime, PrereqGroup,
                      PrereqItem, School, Section, Term, db)
 
@@ -24,6 +26,7 @@ COLUMNS = {
     "sections.csv": ["term", "course", "section", "capacity", "enrolled", "days", "start", "end"],
 }
 DAY_LETTERS = "MTWRFSU"
+MAX_INT = 2_147_483_647  # PostgreSQL INTEGER; anything bigger fails in the database, not as a row error
 
 
 @dataclass
@@ -58,11 +61,13 @@ def _rows(d: Path, name: str, errors: list[str]):
         if missing:
             errors.append(f"{name}: missing column(s) {', '.join(missing)}")
             return
-        for line_no, raw in enumerate(reader, start=2):
+        for raw in reader:
             row = {k: (v or "").strip() for k, v in raw.items() if k}
             if not any(row.values()):
                 continue  # blank line
-            yield line_no, row
+            # The file's own line number, so it stays right after blank lines; a row with a quoted
+            # line break reports the line it ends on.
+            yield reader.line_num, row
 
 
 def _required(row: dict, *cols: str) -> None:
@@ -85,6 +90,8 @@ def _int(row: dict, col: str) -> int:
         raise _RowError(f"{col} {row[col]!r} is not a whole number") from None
     if n < 0:
         raise _RowError(f"{col} can't be negative")
+    if n > MAX_INT:
+        raise _RowError(f"{col} {n} is too large")
     return n
 
 
@@ -211,19 +218,29 @@ def load(data_dir: str | Path, dry_run: bool = False, only: list[str] | None = N
     errors: list[str] = []
     steps = STEPS if only is None else [(name, fn) for name, fn in STEPS if name in only]
 
-    for name, import_row in steps:
-        for line_no, row in _rows(d, name, errors):
-            try:
-                import_row(row, counts)
-            except _RowError as e:
-                errors.append(f"{name} line {line_no}: {e}")
-        # later files look up rows added by earlier ones
-        db.session.flush()
+    where = "import"
+    try:
+        for name, import_row in steps:
+            for line_no, row in _rows(d, name, errors):
+                where = f"{name} line {line_no}"
+                try:
+                    import_row(row, counts)
+                except _RowError as e:
+                    errors.append(f"{where}: {e}")
+            where = name
+            # later files look up rows added by earlier ones
+            db.session.flush()
 
-    if dry_run:
+        if dry_run:
+            db.session.rollback()
+        else:
+            db.session.commit()
+    except SQLAlchemyError as e:
+        # A database error (not a bad row we caught) leaves the session unusable, so undo the whole
+        # import rather than save part of it. The rows before this one are not saved either.
         db.session.rollback()
-    else:
-        db.session.commit()
+        errors.append(f"{where}: the database refused this ({type(e).__name__}); nothing was saved")
+        return ImportResult({k: 0 for k in counts}, errors)
     return ImportResult(counts, errors)
 
 

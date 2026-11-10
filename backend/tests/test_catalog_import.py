@@ -56,4 +56,5 @@ def test_dry_run_saves_nothing(app, client):
         "courses": _csv("subject,number,title,credits\nCS,4999,Capstone,3\n", "courses.csv"),
     }, content_type="multipart/form-data")
     assert resp.json["counts"]["courses"] == 1
+    assert resp.json["dry_run"] is True  # the page labels it "nothing saved" from this
     assert Course.query.filter_by(subject="CS", number="4999").first() is None

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { failureMessage, writeHeaders } from './api.js'
 import { PageHead } from './ui.jsx'
 import ScheduleUpload from './ScheduleUpload.jsx'
 
@@ -33,9 +34,11 @@ export default function CatalogImport() {
 
     setLoading(true)
     try {
-      const r = await fetch(`/api/import/catalog${dryRun ? '?dry_run=1' : ''}`, { method: 'POST', body })
-      if (!r.ok) throw new Error((await r.json()).error || 'Import failed')
-      setResult(await r.json())
+      const r = await fetch(`/api/import/catalog${dryRun ? '?dry_run=1' : ''}`,
+        { method: 'POST', body, headers: writeHeaders() })
+      const data = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(failureMessage(r.status, data, 'Import failed'))
+      setResult(data)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -76,11 +79,14 @@ export default function CatalogImport() {
       {result && (
         <section className={`lookup-result status-${result.ok ? 'confirmed' : 'proposed'}`}>
           <h2>
-            Import result
+            {result.dry_run ? 'Dry run: nothing saved' : 'Import result'}
             <span className={`badge badge-${result.ok ? 'confirmed' : 'proposed'}`}>
-              {result.ok ? 'all rows saved' : `${result.errors.length} rejected`}
+              {result.ok
+                ? (result.dry_run ? 'all rows would save' : 'all rows saved')
+                : `${result.errors.length} rejected`}
             </span>
           </h2>
+          {result.dry_run && <p className="muted small">These are the counts a real import would save.</p>}
           <ul>
             {Object.entries(result.counts).map(([k, v]) => <li key={k}>{k}: {v}</li>)}
           </ul>
