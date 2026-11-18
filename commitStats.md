@@ -1,8 +1,8 @@
 # Commit Stats
 
 **Repository:** Visor  
-**Updated:** Tuesday, November 17, 2026 at 6:05 AM CST  
-**As of commit:** `6cd99ad` on `main`
+**Updated:** Wednesday, November 18, 2026 at 6:08 AM CST  
+**As of commit:** `3a90c48` on `main`
 
 Contributions by each student. Instructor-provided base code is excluded,
 and work done by AI coding agents (such as Copilot's coding agent) is credited
@@ -10,14 +10,12 @@ to the student who requested it.
 
 ## Students
 
-| Student | Email | Commits | Spec lines | Code lines | Lines added (all history) |
-|---|---|--:|--:|--:|--:|
-| Firas Adas | fhadas@mail.lipscomb.edu | 16 | 38 (5.8%) | 3,698 (63.1%) | 4,173 (57.5%) |
-| Austin Patton | 156828970+Generalpatton95@users.noreply.github.com | 10 | 375 (57.1%) | 1,446 (24.7%) | 2,115 (29.1%) |
-| Claude | noreply@anthropic.com | 7 | 244 (37.1%) | 716 (12.2%) | 971 (13.4%) |
-| **Total** | | **33** | **657** | **5,860** | **7,259** |
-
-_Pull request stats unavailable: GitHub lookup failed (Get "https://api.github.com/repos/Lunatic-Labs/Visor/pulls/6/reviews?per_page=100": read tcp 192.168.1.157:51234->140.82.113.6:443: read: connection reset by peer)._
+| Student | Email | Commits | Spec lines | Code lines | Lines added (all history) | PRs opened | PRs merged | PRs reviewed |
+|---|---|--:|--:|--:|--:|--:|--:|--:|
+| Firas Adas | fhadas@mail.lipscomb.edu | 16 | 38 (5.8%) | 3,698 (63.1%) | 4,173 (57.5%) | 6 | 4 | 0 |
+| Austin Patton | 156828970+Generalpatton95@users.noreply.github.com | 10 | 375 (57.1%) | 1,446 (24.7%) | 2,115 (29.1%) | 11 | 10 | 3 |
+| Claude | noreply@anthropic.com | 7 | 244 (37.1%) | 716 (12.2%) | 971 (13.4%) | 0 | 0 | 0 |
+| **Total** | | **33** | **657** | **5,860** | **7,259** | **17** | **14** | **3** |
 
 ## Features
 
